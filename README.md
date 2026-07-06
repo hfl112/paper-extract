@@ -228,18 +228,18 @@ for the full decision tree and troubleshooting.
 
 ## The Skill (for AI agents)
 
-### Install the Skill for agents
-
 The Skill and the CLI are separate. Install both.
 
 First install the CLI:
 
 ```bash
-uv tool install "paper-extract[browser,pdf,llm] @ git+https://github.com/hfl112/paper-extract.git"```
+uv tool install "paper-extract[browser,pdf,llm] @ git+https://github.com/hfl112/paper-extract.git"
+```
 
 Then install the Skill:
 ```skillshare install hfl112/paper-extract/skill/paper-extract
-skillshare sync```
+skillshare sync
+```
 
 Then just ask in plain language:
 
