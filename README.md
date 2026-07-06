@@ -228,13 +228,18 @@ for the full decision tree and troubleshooting.
 
 ## The Skill (for AI agents)
 
-Important: install both parts.
+### Install the Skill for agents
 
-1. The CLI, which actually runs searches, imports, fetches, and exports.
-2. The Skill, which teaches Codex/Claude how to use the CLI.
+The Skill and the CLI are separate. Install both.
 
-`skillshare install .../skill/paper-extract` installs only the Skill; it does
-not install the CLI.
+First install the CLI:
+
+```bash
+uv tool install "paper-extract[browser,pdf,llm] @ git+https://github.com/hfl112/paper-extract.git"```
+
+Then install the Skill:
+```skillshare install hfl112/paper-extract/skill/paper-extract
+skillshare sync```
 
 Then just ask in plain language:
 
