@@ -228,12 +228,15 @@ for the full decision tree and troubleshooting.
 
 ## The Skill (for AI agents)
 
-[`skill/paper-extract/`](skill/paper-extract/) teaches an AI coding agent
-(Claude Code, etc.) how and when to drive the CLI — including the interactive
-library-login flow. Install with
-[skillshare](https://github.com/runkids/skillshare) (copy `skill/paper-extract/`
-into your skills dir, then `skillshare sync`) or point your agent's skills
-directory at it. Then just ask in plain language:
+Important: install both parts.
+
+1. The CLI, which actually runs searches, imports, fetches, and exports.
+2. The Skill, which teaches Codex/Claude how to use the CLI.
+
+`skillshare install .../skill/paper-extract` installs only the Skill; it does
+not install the CLI.
+
+Then just ask in plain language:
 
 > *"build a collection of papers on PPTP drug response, fetch open full text, export BibTeX"* ·
 > *"import these 50 DOIs and build a local JSONL corpus"* ·
