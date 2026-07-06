@@ -1,5 +1,7 @@
 # paper-extract
 
+**Auditable literature collections for biomedical LLM/RAG workflows.**
+
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/offline%20tests-75%20passing-brightgreen.svg)](tests/)
@@ -7,11 +9,19 @@
 
 **English** · [中文](README.zh-CN.md)
 
-Search → collect → full text → export. Build **auditable, local collections of
-biomedical papers**: metadata, structured full-text JSON, optional PDFs, run
-logs, and citation exports (BibTeX / RIS / CSV / JSONL). Full text comes from
-**open access _and_ your own institutional library access** (EZProxy / LibKey /
-SSO) — a clean foundation for downstream LLM / RAG extraction.
+Turn a PubMed / Europe PMC query, a DOI list, a PMID list, or a CSV into a
+**local, reproducible paper collection**: metadata, structured full-text JSON,
+optional PDFs, citation exports, and command logs. Unlike a plain PDF parser,
+`paper-extract` keeps the whole literature workflow auditable — so the result
+is a dataset you can hand to an LLM/RAG pipeline, a systematic review, or a
+grant background, and still trace every paper back to how it got there.
+
+- **One collection = one local folder**
+- **One paper = one readable `article.json`** (metadata + structured full text)
+- **Every command = one `logs/*.json` audit trail**
+- **Exports = BibTeX / RIS / CSV / JSONL** (JSONL is RAG-ready)
+- **Full text = open access first**, optionally *your own* institutional access
+- **Agent-ready** — includes a Skill for Claude Code / Codex-style agents
 
 ```mermaid
 flowchart LR
@@ -22,37 +32,154 @@ flowchart LR
     F --> E["export<br/>BibTeX · RIS · CSV · JSONL"]
 ```
 
+## What you get
+
+One query in, one auditable folder out. This is a **real run** (search →
+fetch open-access full text → status → export), not a mock-up:
+
+```console
+$ paper-extract search --collection pptp-demo \
+    --query 'pediatric preclinical testing program AND "drug response"' --max 8
+Europe PMC : 7
+PubMed     : 6
+overlap    : 0
+→ 13 articles added
+
+$ paper-extract fetch --collection pptp-demo --output-format json --access open
+Fetching: 13 to fetch, 0 already done (skipped)  [output-format=json, access=open]
+  ...
+Done. ok=7 fail=6 / 13 attempted (0 already done).
+
+$ paper-extract status --collection pptp-demo
+Collection: pptp-demo
+Articles: 13
+Metadata available: 13
+Fulltext available: 7
+PDF available: 0
+Article kinds: {'research': 9, 'review': 3, 'other': 1}
+Quality: {'unknown': 6, 'pass': 6, 'weak': 1}
+Sources: {'fulltext:pmc_xml': 7}
+Failed/incomplete articles: 6
+
+$ paper-extract collection export --collection pptp-demo --to bib
+Wrote export: pptp-demo.bib
+```
+
+The failures aren't hidden — 6 papers had no open-access full text, and that's
+recorded per-article and in the fetch log. Point `--access library` at them
+later to retrieve the rest through your own institutional login.
+
+The collection is just plain files you can read, diff, and version:
+
+```text
+data/collections/pptp-demo/
+├── collection.json                       # collection manifest
+├── articles.csv                          # one-line-per-paper index
+├── articles/
+│   └── doi_10_3389_fonc_2026_1685447/
+│       └── article.json                  # metadata + structured full text
+└── logs/
+    ├── search_20260706T061256Z.json      # audit trail: what was searched
+    ├── fetch_20260706T061355Z.json       #             what full text was fetched
+    └── status_20260706T061401Z.json      #             collection state over time
+```
+
+And each `article.json` is structured for downstream extraction (real fields,
+body trimmed):
+
+```jsonc
+{
+  "schema_version": "1.0",
+  "article_id": "doi_10_3389_fonc_2026_1685447",
+  "identifiers": { "doi": "10.3389/fonc.2026.1685447", "pmid": "41939480", "pmcid": "PMC13046488" },
+  "metadata": {
+    "title": "ELDA: real-time functional drug profiling in acute lymphoblastic leukemia.",
+    "authors": ["Mariano SS", "Assis LHP", "Correa JR", "..."],
+    "journal": "Frontiers in oncology",
+    "pub_year": 2026,
+    "article_kind": "research",
+    "is_open_access": true
+  },
+  "links": {
+    "pmc": { "pdf": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC13046488/pdf/" },
+    "publisher": { "page": "https://doi.org/10.3389/fonc.2026.1685447" }
+  },
+  "sections": { "abstract": "…", "Introduction": "…", "Results": "…", "Discussion": "…" },
+  "status": { "metadata": "found", "fulltext": "available", "pdf": "not_started", "llm_extract": "not_started" },
+  "source": { "metadata": ["epmc"], "fulltext": "pmc_xml" },
+  "quality": { "status": "pass", "body_chars": 50773, "section_count": 12, "issues": [] },
+  "updated_at": "2026-07-06T06:13:53Z"
+}
+```
+
+## Who it's for
+
+**Ideal for:**
+
+- Bioinformatics / medical researchers batch-collecting the literature on a topic.
+- Systematic reviews, rebuttals, grant backgrounds — anyone who needs a
+  **traceable, reproducible** set of papers.
+- LLM/RAG builders who need **structured full-text JSON**, not a pile of loose PDFs.
+- Researchers with legitimate **institutional library access** who want their
+  own accessible full text organized into a local corpus.
+
+**Not for:**
+
+- Bypassing paywalls or authentication.
+- Auto-solving captchas.
+- Mass-downloading publisher content.
+- Being a general-purpose scanned-PDF OCR tool.
+
+`paper-extract` only ever uses **your own valid credentials**, stores none of
+them, and asks you to respect publisher terms — see [Responsible use](#responsible-use).
+
 ## Why paper-extract
 
-- **Auditable by design.** One folder per collection, one `article.json` per
-  paper — everything is a plain file you can read, diff, and version. Every
-  command leaves a `logs/*.json` trail.
-- **Open + paywalled full text.** Open access is automatic. For subscription
-  content it drives a real browser through *your* institution's login (log in
-  once, batch many) and never stores your credentials.
-- **Provider-agnostic LLM planning.** `search-plan --prompt` expands aliases and
-  builds precise queries via Gemini / OpenAI / DeepSeek / Claude — or run fully
-  deterministic with `--no-llm`.
-- **Nothing hardcoded, nothing leaked.** Your institution's proxy domain is
-  auto-detected from your login session; proxy/token links are flagged
-  `sensitive` and stripped from every export.
-- **Agent-ready.** Ships with a [Skill](skill/paper-extract/SKILL.md) that
-  teaches AI coding agents (Claude Code, Codex, …) to drive the whole pipeline
-  from plain language.
+**A. Reproducible literature collections.** One paper = one `article.json`, one
+collection = one folder, every command = a `logs/*.json` entry. You can read,
+diff, version, and audit the whole thing with ordinary tools.
+
+**B. Full text first, not just metadata.** Many tools stop at citations.
+`paper-extract` fetches structured full-text JSON (and optional PDFs), with a
+per-article quality check (`body_chars`, `section_count`, issues) so you know
+what you actually got.
+
+**C. Open access *and* your own library access.** Open access is automatic. For
+subscription content it drives a real browser through your institution's login
+(log in once, batch many) and **never stores your credentials**; proxy/token
+links are flagged `sensitive` and stripped from every export.
+
+**D. Built for downstream LLM/RAG extraction.** The point isn't "download
+papers" — it's turning literature into a collection an LLM can reliably process.
+JSONL export is RAG-ready.
+
+**E. Agent skill included.** Ships with a [Skill](skill/paper-extract/SKILL.md)
+that teaches AI coding agents (Claude Code, Codex, …) to drive the whole
+pipeline from plain language.
 
 ## Install
 
-With [uv](https://github.com/astral-sh/uv) (recommended — no conda needed):
+### Users
 
 ```bash
-uv venv --python 3.11                 # creates .venv (downloads Python if needed)
-source .venv/bin/activate             # IMPORTANT: activate first — with a conda env
-                                      # active, `uv pip` would install into conda, not .venv
-uv pip install ".[browser,pdf,llm]"   # engine + library access + PDF parsing + LLM SDKs
+pip install "paper-extract[browser,pdf,llm] @ git+https://github.com/hfl112/paper-extract.git"
 paper-extract --help
 ```
 
-Minimal install (core only): `uv pip install .`
+(Drop the `[browser,pdf,llm]` extras for a core-only install — search, open-access
+full text, and exports work without them.) PyPI release is planned.
+
+### Developers
+
+```bash
+git clone https://github.com/hfl112/paper-extract.git
+cd paper-extract
+uv venv --python 3.11                 # creates .venv (downloads Python if needed)
+source .venv/bin/activate             # IMPORTANT: activate first — with a conda env
+                                      # active, `uv pip` would install into conda, not .venv
+uv pip install ".[browser,pdf,llm,dev]"
+paper-extract --help
+```
 
 Then copy `.env.example` to `.env` and fill in what you use (all optional; see
 [Configuration](#configuration)).
@@ -61,7 +188,7 @@ Then copy `.env.example` to `.env` and fill in what you use (all optional; see
 
 ```bash
 # 1. gather papers (Europe PMC + PubMed)
-paper-extract search --collection demo --query 'cancer "whole genome doubling"' --max 20
+paper-extract search --collection demo --query 'pediatric preclinical testing program AND "drug response"' --max 20
 #    author search:   --query 'AUTH:"Houghton PJ" AND AUTH:"Smith MA"'
 #    by identifiers:  paper-extract collection import --collection demo --input-doi 10.1002/pbc.21508
 
@@ -71,16 +198,6 @@ paper-extract fetch --collection demo --output-format json --access open
 # 3. review & export
 paper-extract status --collection demo
 paper-extract collection export --collection demo --to bib   # bib | ris | csv | jsonl
-```
-
-Each collection lives in `data/collections/<name>/`:
-
-```text
-data/collections/demo/
-├── collection.json          # collection manifest
-├── articles.csv             # one-line-per-paper index
-├── articles/<id>/article.json   # metadata + structured full text, per paper
-└── logs/*.json              # audit trail of every command
 ```
 
 ## Institutional / library full text
@@ -118,9 +235,9 @@ library-login flow. Install with
 into your skills dir, then `skillshare sync`) or point your agent's skills
 directory at it. Then just ask in plain language:
 
-> *"build a collection of papers on whole genome doubling"* ·
-> *"fetch full text for these 30 DOIs, use my library for the paywalled ones"* ·
-> *"export everything to BibTeX"*
+> *"build a collection of papers on PPTP drug response, fetch open full text, export BibTeX"* ·
+> *"import these 50 DOIs and build a local JSONL corpus"* ·
+> *"use my library access for the papers that aren't open access"*
 
 ## Configuration
 

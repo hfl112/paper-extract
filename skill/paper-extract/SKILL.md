@@ -9,6 +9,24 @@ Drives the `paper-extract` CLI (an installable Python package) to build
 reproducible, auditable literature collections. Each collection is a folder with
 `article.json` per paper, an `articles.csv` index, and a `logs/*.json` audit trail.
 
+## Scope
+
+Use this skill when the user wants to:
+- build a literature collection from a topic, query, DOI/PMID list, or CSV;
+- fetch structured full-text JSON and/or PDFs;
+- export a collection to BibTeX / RIS / CSV / JSONL;
+- retrieve paywalled full text through **their own** institutional access.
+
+Do NOT use this skill to:
+- bypass authentication or access controls;
+- auto-solve captchas (the user solves any challenge themselves, in the browser);
+- mass-download publisher content in violation of terms of service;
+- access content the user has no valid credentials for.
+
+Library access always runs through the user's own valid login; the tool never
+stores credentials and never circumvents authentication. If a request implies
+otherwise, decline the circumvention and offer the legitimate path.
+
 ## Prerequisites
 
 - The `paper-extract` package must be importable. Verify with `paper-extract --help`

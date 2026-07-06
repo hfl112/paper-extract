@@ -23,7 +23,7 @@ data/collections/
 *.bib
 *.ris
 *.jsonl
-fulltext/
+/fulltext/
 tmp_*
 .DS_Store
 

@@ -1,5 +1,7 @@
 # paper-extract
 
+**面向生物医学 LLM/RAG 的可审计本地文献库工具。**
+
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/offline%20tests-75%20passing-brightgreen.svg)](tests/)
@@ -7,10 +9,18 @@
 
 [English](README.md) · **中文**
 
-检索 → 收集 → 全文 → 导出。构建**可审计的本地生物医学文献收藏库**：元数据、
-结构化全文 JSON、可选 PDF、运行日志，以及引文导出（BibTeX / RIS / CSV /
-JSONL）。全文同时覆盖**开放获取 _和_ 你自己的机构图书馆访问**（EZProxy /
-LibKey / SSO）——为下游 LLM / RAG 抽取打好干净的地基。
+把一条 PubMed / Europe PMC 查询、一份 DOI 列表、一份 PMID 列表或一个 CSV，变成
+**本地、可复现的文献收藏库**：元数据、结构化全文 JSON、可选 PDF、引文导出，以及
+命令日志。和单纯的 PDF 提取器不同，`paper-extract` 让整条文献工作流**可审计**——
+最终产出是一个能直接喂给 LLM/RAG 流水线、系统综述、基金背景调研的数据集，而且每
+一篇文献都能追溯到它是怎么进来的。
+
+- **一个收藏库 = 一个本地文件夹**
+- **一篇文献 = 一个可读的 `article.json`**（元数据 + 结构化全文）
+- **每条命令 = 一条 `logs/*.json` 审计记录**
+- **导出 = BibTeX / RIS / CSV / JSONL**（JSONL 可直接用于 RAG）
+- **全文 = 开放获取优先**，可选*你自己*的机构访问
+- **Agent 即插即用**——内置给 Claude Code / Codex 类 agent 用的 Skill
 
 ```mermaid
 flowchart LR
@@ -21,32 +31,145 @@ flowchart LR
     F --> E["export<br/>BibTeX · RIS · CSV · JSONL"]
 ```
 
+## 成品长什么样
+
+一条查询进、一个可审计的文件夹出。下面是一次**真实运行**（检索 → 抓开放全文 →
+查看状态 → 导出），不是示意：
+
+```console
+$ paper-extract search --collection pptp-demo \
+    --query 'pediatric preclinical testing program AND "drug response"' --max 8
+Europe PMC : 7
+PubMed     : 6
+overlap    : 0
+→ 13 articles added
+
+$ paper-extract fetch --collection pptp-demo --output-format json --access open
+Fetching: 13 to fetch, 0 already done (skipped)  [output-format=json, access=open]
+  ...
+Done. ok=7 fail=6 / 13 attempted (0 already done).
+
+$ paper-extract status --collection pptp-demo
+Collection: pptp-demo
+Articles: 13
+Metadata available: 13
+Fulltext available: 7
+PDF available: 0
+Article kinds: {'research': 9, 'review': 3, 'other': 1}
+Quality: {'unknown': 6, 'pass': 6, 'weak': 1}
+Sources: {'fulltext:pmc_xml': 7}
+Failed/incomplete articles: 6
+
+$ paper-extract collection export --collection pptp-demo --to bib
+Wrote export: pptp-demo.bib
+```
+
+失败不会被藏起来——有 6 篇没有开放获取全文，这一点会逐篇记录、也会写进 fetch 日
+志。之后对它们用 `--access library`，就能通过你自己的机构登录把剩下的补齐。
+
+收藏库就是一堆可读、可 diff、可版本管理的普通文件：
+
+```text
+data/collections/pptp-demo/
+├── collection.json                       # 收藏库清单
+├── articles.csv                          # 一行一篇的索引
+├── articles/
+│   └── doi_10_3389_fonc_2026_1685447/
+│       └── article.json                  # 元数据 + 结构化全文
+└── logs/
+    ├── search_20260706T061256Z.json      # 审计:搜了什么
+    ├── fetch_20260706T061355Z.json       #      抓了哪些全文
+    └── status_20260706T061401Z.json      #      收藏库状态随时间变化
+```
+
+每个 `article.json` 都为下游抽取做了结构化（真实字段，正文已截断）：
+
+```jsonc
+{
+  "schema_version": "1.0",
+  "article_id": "doi_10_3389_fonc_2026_1685447",
+  "identifiers": { "doi": "10.3389/fonc.2026.1685447", "pmid": "41939480", "pmcid": "PMC13046488" },
+  "metadata": {
+    "title": "ELDA: real-time functional drug profiling in acute lymphoblastic leukemia.",
+    "authors": ["Mariano SS", "Assis LHP", "Correa JR", "..."],
+    "journal": "Frontiers in oncology",
+    "pub_year": 2026,
+    "article_kind": "research",
+    "is_open_access": true
+  },
+  "links": {
+    "pmc": { "pdf": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC13046488/pdf/" },
+    "publisher": { "page": "https://doi.org/10.3389/fonc.2026.1685447" }
+  },
+  "sections": { "abstract": "…", "Introduction": "…", "Results": "…", "Discussion": "…" },
+  "status": { "metadata": "found", "fulltext": "available", "pdf": "not_started", "llm_extract": "not_started" },
+  "source": { "metadata": ["epmc"], "fulltext": "pmc_xml" },
+  "quality": { "status": "pass", "body_chars": 50773, "section_count": 12, "issues": [] },
+  "updated_at": "2026-07-06T06:13:53Z"
+}
+```
+
+## 适合谁用
+
+**适合：**
+
+- 批量收集某个课题文献的生信 / 医学研究者。
+- 做系统综述、rebuttal、基金背景的人——需要**可追踪、可复现**的文献集合。
+- 搭 LLM/RAG 流水线的人——要的是**结构化全文 JSON**，而不是一堆散乱 PDF。
+- 有合法**机构图书馆访问权限**、想把自己可访问的全文整理成本地库的研究者。
+
+**不适合：**
+
+- 破解付费墙或绕过身份认证。
+- 自动破解验证码。
+- 海量下载出版社内容。
+- 当通用扫描件 OCR 工具。
+
+`paper-extract` 只使用**你自己的有效账号**、不保存任何凭证，并要求你遵守出版商条
+款——见[合理使用](#合理使用)。
+
 ## 为什么用 paper-extract
 
-- **天生可审计。** 一个收藏库一个文件夹、一篇文献一个 `article.json`——全部是
-  可读、可 diff、可版本管理的普通文件。每条命令都留下 `logs/*.json` 记录。
-- **开放获取 + 付费墙全文。** 开放获取全自动；订阅内容通过真实浏览器走*你自己*
-  机构的登录（登录一次、批量多篇），绝不保存你的账号密码。
-- **不绑定 LLM 供应商。** `search-plan --prompt` 可用 Gemini / OpenAI /
-  DeepSeek / Claude 扩展别名、生成精确检索式——也可以 `--no-llm` 完全确定性运行。
-- **零硬编码、零泄漏。** 机构代理域名从你的登录会话自动识别；带代理/令牌的链接
-  一律标记 `sensitive` 并从所有导出中剔除。
-- **Agent 即插即用。** 内置 [Skill](skill/paper-extract/SKILL.md)，教会 AI 编程
-  助手（Claude Code、Codex 等）用自然语言驱动整条流水线。
+**A. 可复现的文献收藏库。** 一篇文献一个 `article.json`、一个收藏库一个文件夹、
+每条命令一条 `logs/*.json`。整套东西都能用普通工具读、diff、版本管理、审计。
+
+**B. 全文优先，不止元数据。** 很多工具止步于引文。`paper-extract` 抓结构化全文
+JSON（和可选 PDF），并逐篇做质量检查（`body_chars`、`section_count`、issues），
+让你知道实际拿到了什么。
+
+**C. 开放获取 _和_ 你自己的图书馆访问。** 开放获取全自动；订阅内容通过真实浏览器
+走你机构的登录（登录一次、批量多篇），**绝不保存你的凭证**；带代理/令牌的链接一律
+标记 `sensitive` 并从所有导出中剔除。
+
+**D. 为下游 LLM/RAG 抽取而生。** 重点不是"下载论文"，而是把文献变成 LLM 能可靠
+处理的收藏库。JSONL 导出可直接用于 RAG。
+
+**E. 内置 Agent Skill。** 附带 [Skill](skill/paper-extract/SKILL.md)，教 AI 编程
+助手（Claude Code、Codex 等）用自然语言驱动整条流水线。
 
 ## 安装
 
-推荐用 [uv](https://github.com/astral-sh/uv)（无需 conda）：
+### 普通用户
 
 ```bash
-uv venv --python 3.11                 # 创建 .venv(需要时自动下载 Python)
-source .venv/bin/activate             # 重要:先激活!若终端里有激活的 conda 环境,
-                                      # 不激活直接 uv pip install 会装进 conda 而不是 .venv
-uv pip install ".[browser,pdf,llm]"   # 引擎 + 图书馆访问 + PDF 解析 + LLM SDK
+pip install "paper-extract[browser,pdf,llm] @ git+https://github.com/hfl112/paper-extract.git"
 paper-extract --help
 ```
 
-最小安装（仅核心）：`uv pip install .`
+（去掉 `[browser,pdf,llm]` 就是仅核心安装——检索、开放获取全文、导出都不需要它们。）
+PyPI 发布在计划中。
+
+### 开发者
+
+```bash
+git clone https://github.com/hfl112/paper-extract.git
+cd paper-extract
+uv venv --python 3.11                 # 创建 .venv(需要时自动下载 Python)
+source .venv/bin/activate             # 重要:先激活!若终端里有激活的 conda 环境,
+                                      # 不激活直接 uv pip install 会装进 conda 而不是 .venv
+uv pip install ".[browser,pdf,llm,dev]"
+paper-extract --help
+```
 
 然后把 `.env.example` 复制为 `.env`，按需填写（全部可选，见[配置](#配置)）。
 
@@ -54,7 +177,7 @@ paper-extract --help
 
 ```bash
 # 1. 收集文献(Europe PMC + PubMed)
-paper-extract search --collection demo --query 'cancer "whole genome doubling"' --max 20
+paper-extract search --collection demo --query 'pediatric preclinical testing program AND "drug response"' --max 20
 #    按作者检索:   --query 'AUTH:"Houghton PJ" AND AUTH:"Smith MA"'
 #    按标识符导入: paper-extract collection import --collection demo --input-doi 10.1002/pbc.21508
 
@@ -64,16 +187,6 @@ paper-extract fetch --collection demo --output-format json --access open
 # 3. 查看与导出
 paper-extract status --collection demo
 paper-extract collection export --collection demo --to bib   # bib | ris | csv | jsonl
-```
-
-每个收藏库位于 `data/collections/<名字>/`：
-
-```text
-data/collections/demo/
-├── collection.json              # 收藏库清单
-├── articles.csv                 # 一行一篇的索引
-├── articles/<id>/article.json   # 每篇的元数据 + 结构化全文
-└── logs/*.json                  # 每条命令的审计记录
 ```
 
 ## 机构 / 图书馆全文
@@ -110,9 +223,9 @@ paper-extract fetch --collection demo --output-format both --access library --sp
 复制进你的 skills 目录后 `skillshare sync`），或直接把 agent 的 skills 目录指过
 来。然后用大白话下指令即可：
 
-> *"帮我建一个全基因组加倍相关文献的收藏库"* ·
-> *"这 30 个 DOI 抓全文，付费的走我的图书馆"* ·
-> *"全部导出成 BibTeX"*
+> *"帮我建一个 PPTP 药物响应相关文献的收藏库,抓开放全文,导出 BibTeX"* ·
+> *"这 50 个 DOI 导入,建一个本地 JSONL 语料"* ·
+> *"没开放获取的那几篇,走我的图书馆访问"*
 
 ## 配置
 
