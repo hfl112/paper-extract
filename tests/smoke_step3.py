@@ -73,8 +73,10 @@ def main() -> None:
                 "--access", "library", "--non-interactive")
     check("library notice printed", "Library access may open a browser" in r.stdout)
     check("unconfigured library fails fast", r.returncode != 0)
+    # Stable contract regardless of WHY it's not ready (no browser extra vs no
+    # session): the message names the problem and says it won't auto-log-in.
     check("failure carries guidance", "library access not ready" in r.stderr
-          and "library login" in r.stderr, r.stderr)
+          and "Non-interactive fetch cannot log in" in r.stderr, r.stderr)
 
     # 5. proxy_suffix auto-capture + update, written to library.json under temp root
     snippet = (

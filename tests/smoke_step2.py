@@ -110,8 +110,11 @@ def main() -> None:
         routes = {a2["access"] for item in both_log["items"] for a2 in item.get("attempts", [])}
         check("both tried open and library", {"open", "library"} <= routes, str(routes))
     else:
+        # Stable contract regardless of WHY it's not ready (no browser extra vs no
+        # session): the message names the problem and says it won't auto-log-in.
         check("unconfigured library fails fast with guidance",
-              "library access not ready" in r.stderr and "library login" in r.stderr, r.stderr)
+              "library access not ready" in r.stderr
+              and "Non-interactive fetch cannot log in" in r.stderr, r.stderr)
 
     print("\nAll Step 2 smoke checks passed.")
 
