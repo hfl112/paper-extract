@@ -14,11 +14,11 @@ LibKey / SSO）——为下游 LLM / RAG 抽取打好干净的地基。
 
 ```mermaid
 flowchart LR
-    P["search-plan\n(可选 LLM)"] --> S["search\nEurope PMC · PubMed"]
-    I["import\nDOI · PMID · CSV"] --> C
-    S --> C["collection\n一库一文件夹、一文一 JSON,\n全程审计日志"]
-    C --> F["fetch 全文\n开放获取 + 图书馆"]
-    F --> E["export\nBibTeX · RIS · CSV · JSONL"]
+    P["search-plan<br/>(可选 LLM)"] --> S["search<br/>Europe PMC · PubMed"]
+    I["import<br/>DOI · PMID · CSV"] --> C
+    S --> C["collection<br/>一库一文件夹、一文一 JSON,<br/>全程审计日志"]
+    C --> F["fetch 全文<br/>开放获取 + 图书馆"]
+    F --> E["export<br/>BibTeX · RIS · CSV · JSONL"]
 ```
 
 ## 为什么用 paper-extract

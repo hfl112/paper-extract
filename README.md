@@ -15,11 +15,11 @@ SSO) — a clean foundation for downstream LLM / RAG extraction.
 
 ```mermaid
 flowchart LR
-    P["search-plan\n(optional LLM)"] --> S["search\nEurope PMC · PubMed"]
-    I["import\nDOI · PMID · CSV"] --> C
-    S --> C["collection\n1 folder, 1 JSON per paper,\nfull audit logs"]
-    C --> F["fetch full text\nopen access + library"]
-    F --> E["export\nBibTeX · RIS · CSV · JSONL"]
+    P["search-plan<br/>(optional LLM)"] --> S["search<br/>Europe PMC · PubMed"]
+    I["import<br/>DOI · PMID · CSV"] --> C
+    S --> C["collection<br/>1 folder, 1 JSON per paper,<br/>full audit logs"]
+    C --> F["fetch full text<br/>open access + library"]
+    F --> E["export<br/>BibTeX · RIS · CSV · JSONL"]
 ```
 
 ## Why paper-extract
