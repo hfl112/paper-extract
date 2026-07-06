@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paper-extract"
+version = "0.1.0"
+description = "Build auditable local collections of biomedical papers — search, full-text (open + institutional), and citation export."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "paper-extract contributors" }]
+keywords = ["bibliometrics", "pubmed", "europepmc", "fulltext", "literature", "biomedical", "ezproxy", "rag"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Text Processing",
+]
+# requests is imported on the core CLI path (library_download); keep it in core.
+dependencies = ["requests"]
+
+[project.optional-dependencies]
+pdf = ["pymupdf", "pytesseract", "pillow", "docling"]
+browser = ["cloakbrowser", "browser_cookie3"]
+llm = ["google-genai", "openai", "anthropic"]
+dev = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/hfl112/paper-extract"
+Repository = "https://github.com/hfl112/paper-extract"
+Issues = "https://github.com/hfl112/paper-extract/issues"
+
+[project.scripts]
+paper-extract = "paper_extract.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["paper_extract*", "llmclient*"]

@@ -1,0 +1,11 @@
+# Files to include in the source distribution (sdist).
+include README.md README.zh-CN.md LICENSE .env.example
+recursive-include skill *.md
+recursive-include skill *.yaml
+recursive-include tests *.py *.md *.sh
+
+# Never ship private / generated data.
+prune data
+exclude .env api.md
+global-exclude __pycache__ *.pyc *.pyo .DS_Store
+global-exclude _library_cookies.json library.json

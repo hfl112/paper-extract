@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llmclient"
+version = "0.1.0"
+description = "A tiny provider-agnostic LLM client (Gemini / OpenAI / DeepSeek / Claude)."
+license = {text = "MIT"}
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+gemini = ["google-genai"]
+openai = ["openai"]
+deepseek = ["openai"]
+claude = ["anthropic"]
+all = ["google-genai", "openai", "anthropic"]
+
+[tool.setuptools.packages.find]
+include = ["llmclient*"]

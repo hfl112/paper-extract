@@ -1,0 +1,7 @@
+interface:
+  display_name: "Paper Extract"
+  short_description: "Build auditable biomedical paper collections"
+  default_prompt: "Use $paper-extract to build a local collection of papers on a biomedical topic, fetch available full text, and export citations."
+
+policy:
+  allow_implicit_invocation: true

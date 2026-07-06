@@ -1,0 +1,32 @@
+# Credentials / private
+.env
+api.md
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Institutional library session (never commit)
+data/library.json
+data/library_cookies.json
+data/library_extensions/
+data/library_browser_profile/
+**/_library_cookies.json
+scansci_pdfs/
+
+# Collections & outputs
+data/collections/
+*.bib
+*.ris
+*.jsonl
+fulltext/
+tmp_*
+.DS_Store
+
+# uv / venv
+.venv/
+uv.lock
