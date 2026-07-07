@@ -7,12 +7,13 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- **arXiv** as an opt-in search source (`search --source arxiv`; never in the
-  default biomedical run) for physics/CS/math/quant-bio preprints. Metadata +
-  abstract; each paper gets its minted DataCite DOI (`10.48550/arXiv.<id>`).
 - **OpenAlex** as a third search source (default-on), extending coverage beyond
   biomedical to all disciplines (2.5M+ venues, no API key). Abstracts are
-  reconstructed from OpenAlex's inverted index.
+  reconstructed from OpenAlex's inverted index. Because OpenAlex indexes arXiv,
+  arXiv papers now surface in ordinary searches.
+- **arXiv full text**: an arXiv fetch adapter (keyed on the `10.48550/arXiv.*`
+  DOI, like the bioRxiv adapter) downloads and parses the PDF for arXiv papers
+  found via OpenAlex. arXiv is intentionally *not* a separate search source.
 - `search --source <name>` (repeatable) to limit a search to specific sources
   (`epmc` / `pubmed` / `openalex`); default searches all. Unknown names error.
 - `collection import --input-pdf`: import papers from a local PDF file or a
