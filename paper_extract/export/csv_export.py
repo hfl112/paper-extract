@@ -4,7 +4,7 @@ import csv
 from pathlib import Path
 
 from ..collection import CollectionStore
-from .common import clean_url, has_metadata
+from .common import citation_view
 
 
 # Citation-style CSV (richer than the review index articles.csv): includes
@@ -22,21 +22,20 @@ def export_csv(store: CollectionStore, output: str | None = None) -> Path:
         writer = csv.DictWriter(f, fieldnames=COLUMNS)
         writer.writeheader()
         for article in store.iter_articles():
-            if not has_metadata(article):
+            v = citation_view(article)
+            if not v.has_metadata:
                 continue
-            meta = article.get("metadata") or {}
-            ids = article.get("identifiers") or {}
             writer.writerow({
-                "title": meta.get("title", ""),
-                "authors": "; ".join(meta.get("authors") or []),
-                "journal": meta.get("journal", ""),
-                "pub_year": meta.get("pub_year", ""),
-                "doi": ids.get("doi", ""),
-                "pmid": ids.get("pmid", ""),
-                "pmcid": ids.get("pmcid", ""),
-                "article_kind": meta.get("article_kind", ""),
-                "keywords": "; ".join(meta.get("keywords") or []),
-                "abstract": (article.get("sections") or {}).get("abstract") or "",
-                "url": clean_url(article),
+                "title": v.title,
+                "authors": "; ".join(v.authors),
+                "journal": v.journal,
+                "pub_year": v.pub_year if v.pub_year is not None else "",
+                "doi": v.doi,
+                "pmid": v.pmid,
+                "pmcid": v.pmcid,
+                "article_kind": v.article_kind,
+                "keywords": "; ".join(v.keywords),
+                "abstract": v.abstract,
+                "url": v.url,
             })
     return path
