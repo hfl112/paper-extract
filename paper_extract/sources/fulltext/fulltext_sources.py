@@ -20,14 +20,16 @@
 parse/质检/落盘都自动复用，调用方与批量驱动零改动。
 """
 
+import contextlib as _contextlib
 import os
+import ssl as _ssl
 import time
 import json
 import urllib.request
 import urllib.error
 import urllib.parse
 import xml.etree.ElementTree as ET
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Protocol, Tuple
 
 from .fulltext_fetcher import (
     load_env, build_doc, resolve_pmcid, parse_jats, parse_pmc_html, parse_article_html,
@@ -44,54 +46,135 @@ SPRINGER_PREFIXES = ("10.1007", "10.1038", "10.1186")
 WILEY_PREFIXES = ("10.1002", "10.1111", "10.1046", "10.1113")  # Wiley/Blackwell 主前缀
 
 
-# ── 共享 HTTP：按 host 自动限速 + 退避重试，永不抛异常 ──────────────────────────
-# 限速集中在这一处（深模块的 locality）：调用方/适配器都不需要再管 sleep。
-_RATE = {
-    "eutils.ncbi.nlm.nih.gov": 0.15 if NCBI_KEY else 0.34,
-    "www.ncbi.nlm.nih.gov":    0.34,
-    "www.ebi.ac.uk":           0.5,
-    "api.springernature.com":  0.7,
-    "api.elsevier.com":        1.0,
-    "api.biorxiv.org":         1.0,
-    "www.biorxiv.org":         1.0,
-    "www.medrxiv.org":         1.0,
-    "api.crossref.org":        1.0,
-    "api.unpaywall.org":       0.12,
-    "api.core.ac.uk":          6.0,
-}
-_DEFAULT_RATE = 0.5
-_last_call: Dict[str, float] = {}
+# ── HTTP port ──────────────────────────────────────────────────────────────
+# The transport is injectable at one seam. Production uses UrllibClient (real
+# urllib, per-host throttle + backoff, SSL-ignoring browser fetch); tests inject
+# a fake adapter, so the whole fetch success path is exercisable offline. All
+# rate-limit and SSL state lives inside the adapter — nothing leaks to module
+# scope. get_fulltext()/download_pdf() accept a `client=` to swap the seam.
 
 
-def _throttle(netloc: str) -> None:
-    iv = _RATE.get(netloc, _DEFAULT_RATE)
-    wait = iv - (time.monotonic() - _last_call.get(netloc, 0.0))
-    if wait > 0:
-        time.sleep(wait)
-    _last_call[netloc] = time.monotonic()
+class HttpClient(Protocol):
+    """The transport seam. Two adapters satisfy it: UrllibClient (prod) and a
+    test fake. Every method returns rather than raising — network failure is a
+    value (code=0 / None), never an exception."""
+
+    def get(self, url: str, headers: Optional[Dict] = None, timeout: int = 60,
+            retries: int = 3) -> Tuple[int, bytes, str]: ...
+
+    def browser_get(self, url: str, referer: Optional[str] = None,
+                    timeout: int = 40) -> Optional[bytes]: ...
+
+    def browser_get_url(self, url: str, referer: Optional[str] = None,
+                        timeout: int = 40) -> Tuple[Optional[str], Optional[bytes]]: ...
+
+
+class UrllibClient:
+    """Production HttpClient. Owns all rate-limit + SSL state (per-host throttle
+    table, last-call clock, unverified-SSL context, browser headers)."""
+
+    _RATE = {
+        "eutils.ncbi.nlm.nih.gov": 0.15 if NCBI_KEY else 0.34,
+        "www.ncbi.nlm.nih.gov":    0.34,
+        "www.ebi.ac.uk":           0.5,
+        "api.springernature.com":  0.7,
+        "api.elsevier.com":        1.0,
+        "api.biorxiv.org":         1.0,
+        "www.biorxiv.org":         1.0,
+        "www.medrxiv.org":         1.0,
+        "api.crossref.org":        1.0,
+        "api.unpaywall.org":       0.12,
+        "api.core.ac.uk":          6.0,
+    }
+    _DEFAULT_RATE = 0.5
+    _NOVERIFY = _ssl._create_unverified_context()
+    _BROWSER_HDR = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/pdf,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    def __init__(self) -> None:
+        self._last_call: Dict[str, float] = {}
+
+    def _throttle(self, netloc: str) -> None:
+        iv = self._RATE.get(netloc, self._DEFAULT_RATE)
+        wait = iv - (time.monotonic() - self._last_call.get(netloc, 0.0))
+        if wait > 0:
+            time.sleep(wait)
+        self._last_call[netloc] = time.monotonic()
+
+    def get(self, url: str, headers: Optional[Dict] = None, timeout: int = 60,
+            retries: int = 3) -> Tuple[int, bytes, str]:
+        netloc = urllib.parse.urlsplit(url).netloc
+        delay = 2.0
+        for attempt in range(retries):
+            self._throttle(netloc)
+            try:
+                req = urllib.request.Request(url, headers=headers or {"User-Agent": BROWSER_UA})
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return resp.getcode(), resp.read(), ""
+            except urllib.error.HTTPError as e:
+                if e.code in (429, 500, 502, 503, 504) and attempt < retries - 1:
+                    time.sleep(delay); delay *= 2; continue
+                return e.code, b"", f"HTTP {e.code}"
+            except Exception as e:
+                if attempt < retries - 1:
+                    time.sleep(delay); delay *= 2; continue
+                return 0, b"", type(e).__name__
+        return 0, b"", "max_retries"
+
+    def browser_get(self, url: str, referer: Optional[str] = None,
+                    timeout: int = 40) -> Optional[bytes]:
+        h = dict(self._BROWSER_HDR)
+        h["Referer"] = referer or url
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=h),
+                                        timeout=timeout, context=self._NOVERIFY) as r:
+                return r.read()
+        except Exception:
+            return None
+
+    def browser_get_url(self, url: str, referer: Optional[str] = None,
+                        timeout: int = 40) -> Tuple[Optional[str], Optional[bytes]]:
+        h = dict(self._BROWSER_HDR)
+        h["Referer"] = referer or url
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=h),
+                                        timeout=timeout, context=self._NOVERIFY) as r:
+                return r.geturl(), r.read()
+        except Exception:
+            return None, None
+
+
+# Active client (swapped for the duration of a get_fulltext/download_pdf call
+# when a `client=` is passed). Module-level thin wrappers keep the ~15 existing
+# adapter call sites unchanged.
+_client: HttpClient = UrllibClient()
 
 
 def http_get(url: str, headers: Optional[Dict] = None, timeout: int = 60,
              retries: int = 3) -> Tuple[int, bytes, str]:
     """GET，永不抛异常。返回 (code, body, err)；code=0 表示网络层失败。
-    自动按 host 限速、对 429/5xx 退避重试。"""
-    netloc = urllib.parse.urlsplit(url).netloc
-    delay = 2.0
-    for attempt in range(retries):
-        _throttle(netloc)
-        try:
-            req = urllib.request.Request(url, headers=headers or {"User-Agent": BROWSER_UA})
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return resp.getcode(), resp.read(), ""
-        except urllib.error.HTTPError as e:
-            if e.code in (429, 500, 502, 503, 504) and attempt < retries - 1:
-                time.sleep(delay); delay *= 2; continue
-            return e.code, b"", f"HTTP {e.code}"
-        except Exception as e:
-            if attempt < retries - 1:
-                time.sleep(delay); delay *= 2; continue
-            return 0, b"", type(e).__name__
-    return 0, b"", "max_retries"
+    自动按 host 限速、对 429/5xx 退避重试。委托给当前 HttpClient。"""
+    return _client.get(url, headers, timeout, retries)
+
+
+@_contextlib.contextmanager
+def _using_client(client: Optional[HttpClient]):
+    """Temporarily install `client` as the active transport for a top-level
+    call, restoring the previous one afterwards. No-op when client is None."""
+    global _client
+    if client is None:
+        yield
+        return
+    prev = _client
+    _client = client
+    try:
+        yield
+    finally:
+        _client = prev
 
 
 # ── Elsevier 解析器（非 JATS，ce: 命名空间；返回 parse_jats 同结构 dict）─────────
@@ -433,16 +516,6 @@ def parse_pdf_ocr(pdf_bytes: bytes) -> Dict:
 
 
 # ── 多镜像下载（绕 WAF）：浏览器伪装 + 忽略 SSL + Referer；遍历 Unpaywall 全部 oa_locations ──
-import ssl as _ssl
-_NOVERIFY = _ssl._create_unverified_context()
-_BROWSER_HDR = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/pdf,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-}
-
-
 def _referer_for(url: str) -> str:
     for host, ref in (("mdpi.com", "https://www.mdpi.com/"),
                       ("tandfonline.com", "https://www.tandfonline.com/"),
@@ -455,15 +528,9 @@ def _referer_for(url: str) -> str:
 
 
 def _browser_get(url: str, referer: Optional[str] = None, timeout: int = 40):
-    """浏览器伪装 + 忽略 SSL + Referer 的 GET。永不抛异常，返回 bytes 或 None。"""
-    h = dict(_BROWSER_HDR)
-    h["Referer"] = referer or url
-    try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=h),
-                                    timeout=timeout, context=_NOVERIFY) as r:
-            return r.read()
-    except Exception:
-        return None
+    """浏览器伪装 + 忽略 SSL + Referer 的 GET。永不抛异常，返回 bytes 或 None。
+    委托给当前 HttpClient。"""
+    return _client.browser_get(url, referer, timeout)
 
 
 def _pdf_from_landing(html: str, base: str) -> Optional[str]:
@@ -519,15 +586,9 @@ def resolve_oa_pdf(doi: str):
 
 
 def _browser_get_url(url: str, referer: Optional[str] = None, timeout: int = 40):
-    """同 _browser_get，但一并返回重定向后的最终 URL（作相对链接的 base）。返回 (final_url, bytes) 或 (None, None)。"""
-    h = dict(_BROWSER_HDR)
-    h["Referer"] = referer or url
-    try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=h),
-                                    timeout=timeout, context=_NOVERIFY) as r:
-            return r.geturl(), r.read()
-    except Exception:
-        return None, None
+    """同 _browser_get，但一并返回重定向后的最终 URL（作相对链接的 base）。返回 (final_url, bytes) 或 (None, None)。
+    委托给当前 HttpClient。"""
+    return _client.browser_get_url(url, referer, timeout)
 
 
 def _pdf_via_doi_landing(doi: str):
@@ -549,13 +610,15 @@ def _pdf_via_doi_landing(doi: str):
     return None, "landing_pdf_not_pdf"
 
 
-def download_pdf(paper: Dict):
+def download_pdf(paper: Dict, client: Optional[HttpClient] = None):
     """Public entry: fetch PDF bytes for an article dict (no disk write).
 
     Returns (pdf_bytes|None, url). Wraps the internal multi-mirror strategy so
-    callers outside this module do not depend on a private function.
+    callers outside this module do not depend on a private function. Pass
+    `client` to inject a transport (tests supply a fake; default is urllib).
     """
-    return _download_pdf(paper)
+    with _using_client(client):
+        return _download_pdf(paper)
 
 
 def _download_pdf(paper: Dict):
@@ -833,16 +896,23 @@ PRIORITY = ["pmc_xml", "pmc_html", "epmc_xml", "springer", "wiley_tdm", "elsevie
 ALL_SOURCES = list(ADAPTERS)   # 含未进默认链的（core / pdf 单方法等），需要时 sources=ALL_SOURCES
 
 
-def get_fulltext(paper: Dict, sources: Optional[List[str]] = None
-                 ) -> Tuple[Optional[Dict], str]:
+def get_fulltext(paper: Dict, sources: Optional[List[str]] = None,
+                 client: Optional[HttpClient] = None) -> Tuple[Optional[Dict], str]:
     """深接口：按优先级逐源取结构化全文，第一篇质检非 reject 即返回。
 
     paper：含 doi/pmid/pmcid 的字典（其余字段作 build_doc 底座）。
     sources：限定试哪些源（默认 PRIORITY 全链）。
+    client：注入 transport（测试传 fake，默认走 urllib）。
     返回 (doc, "") 成功 / (None, reason) 失败；reason 逐源列出每个*实际尝试过*的源的原因
     （"源:原因" 用 "; " 连接，如 "elsevier:elsevier_404; ezproxy_html:no_fulltext_html;
     pdf:pdf_download_failed"），未命中的门（applies=False）不计入以免噪声。
     """
+    with _using_client(client):
+        return _get_fulltext(paper, sources)
+
+
+def _get_fulltext(paper: Dict, sources: Optional[List[str]] = None
+                  ) -> Tuple[Optional[Dict], str]:
     order = sources or PRIORITY
     paper = dict(paper)
 
