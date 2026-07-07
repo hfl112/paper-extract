@@ -94,6 +94,7 @@ def doctor() -> dict:
     """
     import importlib.util
     from pathlib import Path
+
     from .libkey import staged_extension
 
     cb = importlib.util.find_spec("cloakbrowser") is not None
@@ -129,6 +130,7 @@ def _get_context(headless: bool = False):
     _CTX_TRIED = True
     try:
         import cloakbrowser as cb
+
         from .libkey import staged_extension
 
         kwargs = {
@@ -490,6 +492,7 @@ def _fetch_pdf_via_proxy(page, doi: str) -> tuple[bytes | None, str, str]:
     same-origin (cookies present, no CORS).
     """
     from urllib.parse import urlparse
+
     from ..sources.fulltext import library_download as _lib
 
     suffix = config.get_proxy_suffix()

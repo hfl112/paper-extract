@@ -79,3 +79,42 @@ def test_run_search_requires_a_query(store):
 def test_merge_results_stamps_provenance_by_source_name():
     merged = merge_results({"a": [{"doi": "10.1/x", "title": "X"}]})
     assert merged[0]["_sources"] == ["a"]
+
+
+def test_merge_results_three_sources_dedup_and_union():
+    # Same DOI from epmc + pubmed + a third source -> one doc, union of sources.
+    results = {
+        "epmc": [{"doi": "10.1/x", "title": "X", "mesh": ["Neoplasms"],
+                  "pub_types": ["Journal Article"]}],
+        "pubmed": [{"doi": "10.1/x", "title": "X", "mesh": ["Genetics"],
+                    "pub_types": ["Review"]}],
+        "openalex": [{"doi": "10.1/x", "title": "X"}],
+    }
+    merged = merge_results(results)
+    assert len(merged) == 1
+    doc = merged[0]
+    assert set(doc["_sources"]) == {"epmc", "pubmed", "openalex"}
+    # epmc+pubmed field-level enrichment still happens (list fields unioned)
+    assert set(doc["mesh"]) == {"Neoplasms", "Genetics"}
+    assert set(doc["pub_types"]) == {"Journal Article", "Review"}
+
+
+def test_merge_results_three_sources_distinct_docs_all_kept():
+    results = {
+        "epmc": [{"doi": "10.1/a", "title": "A"}],
+        "pubmed": [{"doi": "10.2/b", "title": "B"}],
+        "openalex": [{"doi": "10.3/c", "title": "C"}],
+    }
+    merged = merge_results(results)
+    assert {d["doi"] for d in merged} == {"10.1/a", "10.2/b", "10.3/c"}
+
+
+def test_run_search_three_sources_persists_deduped(store):
+    s1 = FakeSource("epmc", [{"doi": "10.1/x", "title": "X"}])
+    s2 = FakeSource("pubmed", [{"doi": "10.1/x", "title": "X"}])
+    s3 = FakeSource("openalex", [{"doi": "10.1/x", "title": "X"}, {"doi": "10.9/z", "title": "Z"}])
+    run_search(store, query="q", sources=[s1, s2, s3])
+    arts = list(store.iter_articles())
+    assert len(arts) == 2  # 10.1/x deduped across all three, plus 10.9/z
+    x = next(a for a in arts if a["identifiers"]["doi"] == "10.1/x")
+    assert set(x["source"]["metadata"]) == {"epmc", "pubmed", "openalex"}

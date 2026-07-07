@@ -13,7 +13,6 @@ from urllib.parse import urlparse
 from ..paths import library_config_path
 from ..time import utc_now
 
-
 DEFAULT_LOGIN_MARKERS = ["/login", "shibboleth", "wayf", "sso", "idp.", "openathens"]
 _PROXY_HOST_HINTS = ("ezproxy", "libproxy", "proxy", "openathens")
 

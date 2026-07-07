@@ -25,7 +25,6 @@ from . import article as article_mod
 from . import links as links_mod
 from .sources.fulltext import fulltext_fetcher
 
-
 # --------------------------------------------------------------------------
 # article.json  ->  flat "paper" dict the source adapters expect
 # --------------------------------------------------------------------------

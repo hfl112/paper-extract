@@ -6,7 +6,6 @@ from pathlib import Path
 from ..collection import CollectionStore
 from .common import citation_view
 
-
 # Citation-style CSV (richer than the review index articles.csv): includes
 # abstract + keywords so it can seed a reference manager or a downstream LLM step.
 COLUMNS = [

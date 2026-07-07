@@ -7,11 +7,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .. import article as article_mod
+from .. import library
 from ..collection import CollectionStore
 from ..time import utc_now
-from .. import library
 from . import artifacts
-
 
 # Per-article wait (seconds) between consecutive library-access articles, so rapid
 # automated navigation doesn't look bot-like and re-trigger reCAPTCHA. Random jitter

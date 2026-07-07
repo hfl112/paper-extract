@@ -9,7 +9,6 @@ from __future__ import annotations
 from paper_extract import article as article_mod
 from paper_extract import assemble
 
-
 _LONG = (
     "This body section is long enough for the extraction quality gate to treat it "
     "as a substantial article body rather than too short. " * 10

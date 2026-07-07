@@ -7,7 +7,6 @@ from urllib.parse import parse_qs, urlparse
 
 from .paths import library_config_path
 
-
 # Query-string keys that indicate a per-session credential/signature.
 _SENSITIVE_QUERY_KEYS = {
     "token", "access_token", "auth", "authtoken", "ticket", "sig", "signature",

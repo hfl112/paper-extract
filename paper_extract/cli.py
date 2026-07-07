@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from .collection import CollectionStore
 from .collection.importer import import_articles
 from .export import export_collection
 from .fetch import run_fetch
 from .search import build_plan, run_search
+from .search.sources import select_sources
 from .status import status_report
 from .time import utc_now
 
@@ -33,6 +33,10 @@ def cmd_search_plan(args: argparse.Namespace) -> None:
 
 def cmd_search(args: argparse.Namespace) -> None:
     store = CollectionStore.open(args.collection)
+    try:
+        sources = select_sources(args.source)
+    except ValueError as e:
+        raise SystemExit(str(e))
     path = run_search(
         store,
         query=args.query,
@@ -40,6 +44,7 @@ def cmd_search(args: argparse.Namespace) -> None:
         min_year=args.min_year,
         max_year=args.max_year,
         max_results=args.max_results,
+        sources=sources,
     )
     print(f"Wrote search log: {path}")
 
@@ -148,6 +153,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--min-year")
     p.add_argument("--max-year")
     p.add_argument("--max", type=int, default=1000, dest="max_results")
+    p.add_argument("--source", action="append",
+                   help="Limit to specific sources (repeatable): epmc | pubmed | openalex. "
+                        "Default: all. Unknown names error. (arXiv arrives via OpenAlex.)")
     p.set_defaults(func=cmd_search)
 
     p = sub.add_parser("fetch", help="Fetch structured fulltext JSON and/or PDFs")

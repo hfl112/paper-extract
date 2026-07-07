@@ -21,20 +21,30 @@ parse/质检/落盘都自动复用，调用方与批量驱动零改动。
 """
 
 import contextlib as _contextlib
+import json
 import os
 import ssl as _ssl
 import time
-import json
-import urllib.request
 import urllib.error
 import urllib.parse
+import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Optional, Protocol, Tuple
 
 from .fulltext_fetcher import (
-    load_env, build_doc, resolve_pmcid, parse_jats, parse_pmc_html, parse_article_html,
-    _reuse_class, _now, _strip_ns, _text, _pub_flags_from_jats,
-    EFETCH, PMC_HTML_URL,
+    EFETCH,
+    PMC_HTML_URL,
+    _now,
+    _pub_flags_from_jats,
+    _reuse_class,
+    _strip_ns,
+    _text,
+    build_doc,
+    load_env,
+    parse_article_html,
+    parse_jats,
+    parse_pmc_html,
+    resolve_pmcid,
 )
 
 load_env()
@@ -327,6 +337,30 @@ def _a_biorxiv(paper: Dict):
     return None, "no_biorxiv_version", ""
 
 
+def _arxiv_id_from_doi(doi: str) -> str:
+    """10.48550/arXiv.2201.00978 -> 2201.00978 (arXiv's minted DataCite DOI)."""
+    d = (doi or "").lower()
+    marker = "10.48550/arxiv."
+    return d.split(marker, 1)[1] if marker in d else ""
+
+
+def _a_arxiv(paper: Dict):
+    """arXiv full text: fetch the PDF from arxiv.org and 3-layer parse it. Keyed on
+    the minted arXiv DOI (10.48550/arXiv.<id>), the same way biorxiv keys on 10.1101.
+    arXiv papers reach us via OpenAlex search; this fetches their body."""
+    arxiv_id = _arxiv_id_from_doi(paper.get("doi") or "")
+    if not arxiv_id:
+        return None, "not_arxiv", ""
+    url = f"https://arxiv.org/pdf/{arxiv_id}"
+    pdf = _browser_get(url)
+    if not pdf or pdf[:4] != b"%PDF":
+        return None, "arxiv_pdf_download_failed", ""
+    parsed, tag = _parse_pdf_3layer(pdf)
+    if parsed is None:
+        return None, tag, ""
+    return parsed, "arxiv_pdf", url
+
+
 def _a_core(paper: Dict):
     """CORE.ac.uk v3：按 DOI 取已抽好的纯文本正文（flat text，非分节）。本项目命中率低
     （语料偏新）+ 限流凶，不进默认优先级；保留供别处/别的语料复用：sources=["core"]。"""
@@ -390,6 +424,7 @@ def _md_to_sections(md: str) -> Dict[str, str]:
 
 # Docling 从 PDF 版面推断标题时会混入页面furniture/广告，这些不是真章节，过滤掉。
 import re as _re
+
 _PDF_NOISE_RE = _re.compile(
     r"(open access|ready to submit|choose bmc|submit your manuscript|springer nature|"
     r"publisher'?s note|^\s*received\b|accepted:|author details|running (title|head)|"
@@ -440,6 +475,7 @@ def clean_pdf_sections(secs: Dict[str, str]) -> Dict[str, str]:
 
 def parse_pdf_docling(pdf_bytes: bytes) -> Dict:
     import io
+
     from docling.datamodel.base_models import DocumentStream
     res = _docling_converter().convert(DocumentStream(name="a.pdf", stream=io.BytesIO(pdf_bytes)))
     secs = clean_pdf_sections(_md_to_sections(res.document.export_to_markdown()))
@@ -502,7 +538,10 @@ def parse_pdf_pymupdf(pdf_bytes: bytes) -> Dict:
 
 
 def parse_pdf_ocr(pdf_bytes: bytes) -> Dict:
-    import io, fitz, pytesseract
+    import io
+
+    import fitz
+    import pytesseract
     from PIL import Image
     doc = fitz.open(stream=pdf_bytes, filetype="pdf"); out = []
     for p in doc:
@@ -873,6 +912,7 @@ ADAPTERS = {
     "wiley_tdm": (_a_wiley_tdm, lambda p: bool(os.environ.get("WILEY_TDM_TOKEN")) and (p.get("doi") or "").startswith(WILEY_PREFIXES), "wiley_tdm_api"),
     "elsevier": (_a_elsevier, lambda p: (p.get("doi") or "").startswith("10.1016"), "elsevier_article"),
     "biorxiv":  (_a_biorxiv,  lambda p: (p.get("doi") or "").startswith("10.1101"), "biorxiv_api"),
+    "arxiv":    (_a_arxiv,    lambda p: (p.get("doi") or "").lower().startswith("10.48550/arxiv"), "arxiv_pdf"),
     "core":     (_a_core,     lambda p: bool(p.get("doi")), "core_v3"),
     # EZProxy 订阅路线（requests+代理域）：登记保留但【不进默认链】—— 依赖机构账号 Cookie，
     # 且 requests 打不过 ScienceDirect 反爬、EZProxy 登录态易过期，实测收益有限。
@@ -892,7 +932,7 @@ ADAPTERS = {
 #   - "core"：纯文本兜底，本库命中率低+限流凶，保留供别处复用。
 #   - "ezproxy_html"/"ezproxy_pdf"：EZProxy 订阅路，依赖机构 Cookie、requests 过不了强反爬，收益有限。
 #   - "pdf_docling"/"pdf_pymupdf"/"pdf_ocr"：PDF 单方法，供单测/强制指定；默认用 "pdf"(三层自动)。
-PRIORITY = ["pmc_xml", "pmc_html", "epmc_xml", "springer", "wiley_tdm", "elsevier", "biorxiv", "pdf"]
+PRIORITY = ["pmc_xml", "pmc_html", "epmc_xml", "springer", "wiley_tdm", "elsevier", "biorxiv", "arxiv", "pdf"]
 ALL_SOURCES = list(ADAPTERS)   # 含未进默认链的（core / pdf 单方法等），需要时 sources=ALL_SOURCES
 
 
