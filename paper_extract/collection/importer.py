@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import json
+import re
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +11,9 @@ from ..schema import new_article
 from ..sources.search import europepmc_fetcher
 from ..time import utc_now
 from .store import CollectionStore
+
+
+_DOI_RE = re.compile(r"10\.\d{4,9}/[^\s\"'<>]+", re.I)
 
 
 def _read_input(path: Path) -> list[dict[str, Any]]:
@@ -38,6 +43,100 @@ def _read_json(path: Path) -> list[dict[str, Any]]:
     if isinstance(data, dict):
         return [data]
     raise ValueError(f"Unsupported JSON shape: {path}")
+
+
+def _expand_pdfs(paths: list[str] | None) -> list[Path]:
+    """Turn --input-pdf values into a flat, ordered list of .pdf files.
+
+    A value may be a single PDF or a directory (expanded to its *.pdf, non-recursive)."""
+    out: list[Path] = []
+    for value in paths or []:
+        path = Path(value).expanduser()
+        if path.is_dir():
+            out.extend(sorted(path.glob("*.pdf")))
+        else:
+            out.append(path)
+    return out
+
+
+def _pymupdf_available() -> bool:
+    try:  # same fallback order as _extract_pdf_seed
+        import pymupdf  # type: ignore # noqa: F401
+        return True
+    except Exception:
+        try:
+            import fitz  # type: ignore # noqa: F401
+            return True
+        except Exception:
+            return False
+
+
+def _find_doi(text: str) -> str:
+    match = _DOI_RE.search(text or "")
+    if not match:
+        return ""
+    return match.group(0).rstrip(".,;:)]}>\"'").strip()
+
+
+def _extract_pdf_seed(path: Path) -> dict[str, Any]:
+    """Best-effort metadata from a local PDF: DOI from body text, title from
+    embedded metadata. Falls back to the filename stem so the article_id never
+    collapses to the shared 'unknown' hash. Degrades cleanly without pymupdf."""
+    text = ""
+    embedded_title = ""
+    pymupdf = None
+    try:  # pymupdf >= 1.24 exposes the top-level name; older builds only expose fitz
+        import pymupdf  # type: ignore
+    except Exception:
+        try:
+            import fitz as pymupdf  # type: ignore
+        except Exception:
+            pymupdf = None
+    if pymupdf is not None:
+        try:
+            with pymupdf.open(path) as doc:
+                embedded_title = ((doc.metadata or {}).get("title") or "").strip()
+                for index, page in enumerate(doc):
+                    if index >= 3:  # DOI, if present, is on the first pages
+                        break
+                    text += page.get_text()
+        except Exception:
+            pass
+
+    seed: dict[str, Any] = {}
+    doi = _find_doi(text)
+    if doi:
+        seed["doi"] = doi
+    clean_title = "" if embedded_title.lower().startswith("microsoft word") else embedded_title
+    if doi:
+        if clean_title:
+            seed["title"] = clean_title
+    else:
+        seed["title"] = clean_title or path.stem
+    return seed
+
+
+def import_pdf(store: CollectionStore, path: Path) -> dict[str, Any]:
+    """Import one local PDF: derive/enrich metadata, upsert the article, then
+    copy the file in and mark it available. Returns a log item dict."""
+    if not path.is_file():
+        return {"article_id": "", "status": "failed", "reason": "file_not_found", "attempts": []}
+    try:
+        article = new_article(_enrich(_extract_pdf_seed(path)))
+        if article["status"]["metadata"] == "found":
+            article["source"]["metadata"] = ["import"]
+        article = store.upsert_article(article)  # merge onto any existing article first
+        article_id = article["article_id"]
+        dest = store.pdf_path(article_id)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, dest)
+        article.setdefault("files", {})["pdf"] = str(dest.relative_to(store.article_dir(article_id)))
+        article.setdefault("status", {})["pdf"] = "available"
+        article.setdefault("source", {})["pdf"] = "import"
+        store.write_article(article)  # write_article, not upsert: merge_article drops files/source
+        return {"article_id": article_id, "status": "succeeded", "attempts": []}
+    except Exception as e:
+        return {"article_id": "", "status": "failed", "reason": type(e).__name__, "attempts": []}
 
 
 def _enrich(row: dict[str, Any]) -> dict[str, Any]:
@@ -74,6 +173,7 @@ def import_articles(
     input_json: str | None = None,
     input_doi: list[str] | None = None,
     input_pmid: list[str] | None = None,
+    input_pdf: list[str] | None = None,
 ) -> Path:
     started = utc_now()
     rows: list[dict[str, Any]] = []
@@ -85,8 +185,12 @@ def import_articles(
         rows.append({"doi": doi})
     for pmid in input_pmid or []:
         rows.append({"pmid": pmid})
-    if not rows:
+    pdf_paths = _expand_pdfs(input_pdf)
+    if not rows and not pdf_paths:
         raise ValueError("No import input provided")
+    if pdf_paths and not _pymupdf_available():
+        print('Note: pymupdf not installed — using filenames as titles (no DOI extraction). '
+              'For metadata from PDF contents: pip install ".[pdf]"')
 
     items = []
     succeeded = failed = 0
@@ -106,13 +210,25 @@ def import_articles(
         except Exception as e:
             failed += 1
             items.append({"article_id": "", "status": "failed", "reason": type(e).__name__, "attempts": []})
+    for pdf_path in pdf_paths:
+        item = import_pdf(store, pdf_path)
+        succeeded += int(item["status"] == "succeeded")
+        failed += int(item["status"] == "failed")
+        items.append(item)
     articles = store.iter_articles()
     store.write_articles_csv(articles)
     store.update_stats(articles)
+    total = len(rows) + len(pdf_paths)
     return store.write_log(
         "import",
-        {"input": input_path or "", "input_json": input_json or "", "input_doi": input_doi or [], "input_pmid": input_pmid or []},
-        {"total": len(rows), "succeeded": succeeded, "failed": failed, "skipped": 0},
+        {
+            "input": input_path or "",
+            "input_json": input_json or "",
+            "input_doi": input_doi or [],
+            "input_pmid": input_pmid or [],
+            "input_pdf": [str(p) for p in pdf_paths],
+        },
+        {"total": total, "succeeded": succeeded, "failed": failed, "skipped": 0},
         items,
         started,
     )
