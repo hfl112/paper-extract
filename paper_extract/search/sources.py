@@ -12,7 +12,13 @@ from __future__ import annotations
 import os
 from typing import Any, Protocol
 
-from ..sources.search import compare_sources, europepmc_fetcher, openalex_fetcher, pubmed_fetcher
+from ..sources.search import (
+    arxiv_fetcher,
+    compare_sources,
+    europepmc_fetcher,
+    openalex_fetcher,
+    pubmed_fetcher,
+)
 from ..sources.search._shared import doc_key
 
 
@@ -50,16 +56,27 @@ class OpenAlexSource:
             query, max_results=max_results, min_year=min_year, max_year=max_year)
 
 
+class ArxivSource:
+    name = "arxiv"
+
+    def search(self, query, *, min_year=None, max_year=None, max_results=1000):
+        return arxiv_fetcher.search_arxiv(
+            query, max_results=max_results, min_year=min_year, max_year=max_year)
+
+
+# Searched by default. arXiv is opt-in (non-biomedical) — selectable via
+# `--source arxiv` but never part of the default biomedical run.
 DEFAULT_SOURCES: list[Source] = [EuropePMCSource(), PubMedSource(), OpenAlexSource()]
+_OPT_IN_SOURCES: list[Source] = [ArxivSource()]
 
 
 def select_sources(names: list[str] | None) -> list[Source]:
     """Return the sources to search: all defaults if names is falsy, else the
-    subset whose name matches (order follows names). Raises ValueError on an
-    unknown name."""
+    subset whose name matches (order follows names). Opt-in sources (e.g. arxiv)
+    are reachable only by explicit name. Raises ValueError on an unknown name."""
     if not names:
         return DEFAULT_SOURCES
-    by_name = {s.name: s for s in DEFAULT_SOURCES}
+    by_name = {s.name: s for s in [*DEFAULT_SOURCES, *_OPT_IN_SOURCES]}
     chosen: list[Source] = []
     for n in names:
         if n not in by_name:

@@ -154,8 +154,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-year")
     p.add_argument("--max", type=int, default=1000, dest="max_results")
     p.add_argument("--source", action="append",
-                   help="Limit to specific sources (repeatable): epmc | pubmed | openalex. "
-                        "Default: all. Unknown names error.")
+                   help="Limit to specific sources (repeatable): epmc | pubmed | openalex | arxiv. "
+                        "Default: epmc+pubmed+openalex. arxiv is opt-in (only via --source arxiv).")
     p.set_defaults(func=cmd_search)
 
     p = sub.add_parser("fetch", help="Fetch structured fulltext JSON and/or PDFs")
