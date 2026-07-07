@@ -1,0 +1,41 @@
+# Changelog
+
+All notable changes to this project are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims
+to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- `collection import --input-pdf`: import papers from a local PDF file or a
+  directory of PDFs. Metadata (DOI, title) is read from the PDF via PyMuPDF
+  (optional `[pdf]` extra) with a filename fallback when it is not installed,
+  then enriched via Europe PMC.
+
+### Changed
+- Internal architecture refactor — no change to CLI behavior or on-disk output:
+  - The article schema and its state transitions now live in one **Article
+    module** (`paper_extract/article.py`); status values are defined once.
+  - Full-text assembly (the flatten → build → quality → link-marking sequence)
+    is shared by the open-access and institutional routes via one **assemble**
+    module, removing duplicated code and an internal import cycle.
+  - The fetch transport is an **injectable HTTP client**, so the full-text
+    fetch path is exercisable offline.
+  - Search sources sit behind a **Source interface** with Europe PMC and PubMed
+    adapters, sharing one retry loop and dedup key.
+  - Citation exports (BibTeX/RIS/CSV) share one `citation_view`.
+
+### Removed
+- Dead modules and unused writers left over from a retired CLI
+  (`cancer_tagger`, `dedup_merge`, per-fetcher `write_csv`/`write_json`).
+
+## [0.1.0] - 2026-07-05
+
+### Added
+- Initial public release: search (Europe PMC + PubMed), import by DOI/PMID/CSV,
+  structured full-text JSON + PDF fetch (open access and institutional via
+  EZProxy/LibKey), and BibTeX/RIS/CSV/JSONL export, with per-command audit logs.
+- Agent Skill for Claude Code / Codex-style agents.
+
+[Unreleased]: https://github.com/hfl112/paper-extract/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/hfl112/paper-extract/releases/tag/v0.1.0
