@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..fetch.links import is_sensitive_url
+from ..links import is_sensitive_url
 
 
 def clean_url(article: dict[str, Any]) -> str:

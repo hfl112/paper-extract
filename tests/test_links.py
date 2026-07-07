@@ -1,7 +1,7 @@
 """Offline tests for sensitive-link detection and redaction."""
 from __future__ import annotations
 
-from paper_extract.fetch.links import (
+from paper_extract.links import (
     is_sensitive_url,
     mark_sensitive_links,
     redact_sensitive_links,
