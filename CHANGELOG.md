@@ -7,6 +7,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **OpenAlex** as a third search source (default-on), extending coverage beyond
+  biomedical to all disciplines (2.5M+ venues, no API key). Abstracts are
+  reconstructed from OpenAlex's inverted index.
+- `search --source <name>` (repeatable) to limit a search to specific sources
+  (`epmc` / `pubmed` / `openalex`); default searches all. Unknown names error.
 - `collection import --input-pdf`: import papers from a local PDF file or a
   directory of PDFs. Metadata (DOI, title) is read from the PDF via PyMuPDF
   (optional `[pdf]` extra) with a filename fallback when it is not installed,
