@@ -1,14 +1,10 @@
 """
 第 1 步：从 Europe PMC 检索文献的库模块。
 
-提供 search_europepmc()（cursorMark 分页 + 去重）、normalize()（统一 schema）、
-write_csv()/write_json()。输出 europepmc.csv（精简 metadata，人工核对用）和
-europepmc.json（每篇一个 JSON 文档，含 sections.abstract，供后续步骤追加内容）。
+提供 search_europepmc()（cursorMark 分页 + 去重）与 normalize()（统一 schema）。
+返回每篇一个 dict（含 sections.abstract），由上层 runner 合并落库；本模块不写文件。
 
 仅依赖 Python 标准库；不需要 API key（Europe PMC 免费），不碰数据库。
-
-命令行入口已统一到 code/main.py：
-    python code/main.py search "cancer immunotherapy" --max 1000 --min_year 2020
 """
 
 import urllib.request
@@ -16,7 +12,6 @@ import urllib.parse
 import urllib.error
 import http.client
 import json
-import csv
 import time
 from typing import List, Dict, Optional
 
@@ -24,13 +19,6 @@ BASE_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 PAGE_SIZE = 1000          # Europe PMC 单页上限
 THROTTLE = 0.34           # 每页请求间隔（秒），约 3 req/s，友好限流
 USER_AGENT = "paper-extract/1.0 (literature review tool)"
-
-# europepmc.csv 的列（精简 metadata，不含 abstract）
-CSV_COLS = [
-    "title", "authors", "journal", "pub_year", "doi", "pmid",
-    "is_open_access", "is_review", "pub_types", "cited_by_count", "language",
-    "fulltext_urls", "pubmed_url", "doi_url",
-]
 
 
 def _request(url: str, max_retries: int = 5) -> dict:
@@ -219,33 +207,5 @@ def search_europepmc(
         time.sleep(THROTTLE)
 
     return docs
-
-
-def write_csv(docs: List[Dict], path: str) -> None:
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(CSV_COLS)
-        for d in docs:
-            w.writerow([
-                d["title"],
-                "; ".join(d["authors"]),
-                d["journal"],
-                d["pub_year"] or "",
-                d["doi"] or "",
-                d["pmid"] or "",
-                "Y" if d["is_open_access"] else "N",
-                "Y" if d.get("is_review") else "N",
-                " | ".join(d.get("pub_types", [])),
-                d.get("cited_by_count") if d.get("cited_by_count") is not None else "",
-                d.get("language", ""),
-                " | ".join(d["fulltext_urls"]),
-                d["pubmed_url"],
-                d["doi_url"],
-            ])
-
-
-def write_json(docs: List[Dict], path: str) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(docs, f, ensure_ascii=False, indent=2)
 
 
