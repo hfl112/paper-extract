@@ -1,39 +1,29 @@
 """
-第 1 步（备用源）：从 NCBI PubMed 检索文献，输出与 europepmc_fetcher.py 完全一致的
-CSV + JSON 格式（默认 pubmed.csv / pubmed.json），便于两个来源相互核对（召回差异、metadata 一致性）。
+第 1 步（备用源）：从 NCBI PubMed 检索文献，返回与 europepmc_fetcher.py 完全一致的
+归一化 dict（每篇一个），便于两个来源相互核对（召回差异、metadata 一致性）与合并落库。
 
 相比 Europe PMC，PubMed 的优势是 MeSH automatic term mapping（检索召回更全更准）；
 劣势是不直接返回 OA 状态与全文链接 —— 这里用 PMCID 推断（有 PMC 全文≈可免费获取）。
 
 用 NCBI E-utilities + history server 分页支持上千篇；NCBI_API_KEY 提速（3→10 req/s）。
 从 .env 读取 key（无需第三方依赖）。
-
-命令行入口已统一到 code/main.py：
-    python code/main.py search "cancer immunotherapy" --max 1000 --min_year 2020 --sources pubmed
 """
 
 import urllib.request
 import urllib.parse
 import urllib.error
-import http.client
 import xml.etree.ElementTree as ET
 import json
-import csv
 import os
 import time
 from typing import List, Dict, Optional
+
+from ._shared import retry_get
 
 ESEARCH = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 EFETCH = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 BATCH = 200                # 每次 efetch 取多少篇（XML 较大，保守取值）
 USER_AGENT = "paper-extract/1.0 (literature review tool)"
-
-# 与 europepmc_fetcher.py 保持一致的 CSV 列
-CSV_COLS = [
-    "title", "authors", "journal", "pub_year", "doi", "pmid",
-    "is_open_access", "is_review", "pub_types", "cited_by_count", "language",
-    "fulltext_urls", "pubmed_url", "doi_url",
-]
 
 
 def load_env(filename: str = ".env") -> None:
@@ -58,35 +48,7 @@ def load_env(filename: str = ".env") -> None:
 
 def _request(url: str, max_retries: int = 5) -> bytes:
     """带指数退避重试的 GET，返回原始 bytes。"""
-    delay = 1.0
-    for attempt in range(max_retries):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                return resp.read()
-        except urllib.error.HTTPError as e:
-            if e.code in (429, 500, 502, 503, 504) and attempt < max_retries - 1:
-                print(f"  HTTP {e.code}，{delay:.0f}s 后重试 ({attempt + 1}/{max_retries})")
-                time.sleep(delay)
-                delay *= 2
-                continue
-            raise
-        except urllib.error.URLError as e:
-            if attempt < max_retries - 1:
-                print(f"  网络错误 {e.reason}，{delay:.0f}s 后重试 ({attempt + 1}/{max_retries})")
-                time.sleep(delay)
-                delay *= 2
-                continue
-            raise
-        except (http.client.IncompleteRead, ConnectionError, TimeoutError) as e:
-            # 连接层读取中断（大响应体常见），同样退避重试
-            if attempt < max_retries - 1:
-                print(f"  读取中断 {type(e).__name__}，{delay:.0f}s 后重试 ({attempt + 1}/{max_retries})")
-                time.sleep(delay)
-                delay *= 2
-                continue
-            raise
-    raise RuntimeError("超过最大重试次数")
+    return retry_get(url, USER_AGENT, max_retries)
 
 
 def _text(node: Optional[ET.Element]) -> str:
@@ -286,33 +248,5 @@ def search_pubmed(
         time.sleep(throttle)
 
     return docs
-
-
-def write_csv(docs: List[Dict], path: str) -> None:
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(CSV_COLS)
-        for d in docs:
-            w.writerow([
-                d["title"],
-                "; ".join(d["authors"]),
-                d["journal"],
-                d["pub_year"] or "",
-                d["doi"] or "",
-                d["pmid"] or "",
-                "Y" if d["is_open_access"] else "N",
-                "Y" if d.get("is_review") else "N",
-                " | ".join(d.get("pub_types", [])),
-                d.get("cited_by_count") if d.get("cited_by_count") is not None else "",
-                d.get("language", ""),
-                " | ".join(d["fulltext_urls"]),
-                d["pubmed_url"],
-                d["doi_url"],
-            ])
-
-
-def write_json(docs: List[Dict], path: str) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(docs, f, ensure_ascii=False, indent=2)
 
 

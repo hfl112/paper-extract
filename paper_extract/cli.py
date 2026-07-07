@@ -87,6 +87,7 @@ def cmd_collection_import(args: argparse.Namespace) -> None:
         input_json=args.input_json,
         input_doi=args.input_doi,
         input_pmid=args.input_pmid,
+        input_pdf=args.input_pdf,
     )
     print(f"Wrote import log: {path}")
 
@@ -174,6 +175,8 @@ def build_parser() -> argparse.ArgumentParser:
     ci.add_argument("--input-json")
     ci.add_argument("--input-doi", action="append", default=[])
     ci.add_argument("--input-pmid", action="append", default=[])
+    ci.add_argument("--input-pdf", action="append", default=[],
+                    help="Local PDF file or directory of PDFs; metadata is read from the PDF and enriched via Europe PMC")
     ci.set_defaults(func=cmd_collection_import)
 
     ce = csub.add_parser("export", help="Export a collection to external formats")

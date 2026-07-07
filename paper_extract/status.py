@@ -3,6 +3,7 @@ from __future__ import annotations
 import collections
 from pathlib import Path
 
+from . import article as article_mod
 from .collection import CollectionStore
 from .time import utc_now
 
@@ -29,7 +30,7 @@ def status_report(store: CollectionStore) -> Path:
             source_counts[f"fulltext:{source['fulltext']}"] += 1
         if source.get("pdf"):
             source_counts[f"pdf:{source['pdf']}"] += 1
-        if st.get("fulltext") == "failed" or st.get("pdf") == "failed":
+        if st.get("fulltext") == article_mod.FAILED or st.get("pdf") == article_mod.FAILED:
             failed.append(article.get("article_id", ""))
 
     summary = {
@@ -45,9 +46,9 @@ def status_report(store: CollectionStore) -> Path:
     }
     print(f"Collection: {store.name}")
     print(f"Articles: {total}")
-    print(f"Metadata available: {status_counts.get('metadata:found', 0)}")
-    print(f"Fulltext available: {status_counts.get('fulltext:available', 0)}")
-    print(f"PDF available: {status_counts.get('pdf:available', 0)}")
+    print(f"Metadata available: {status_counts.get(f'metadata:{article_mod.FOUND}', 0)}")
+    print(f"Fulltext available: {status_counts.get(f'fulltext:{article_mod.AVAILABLE}', 0)}")
+    print(f"PDF available: {status_counts.get(f'pdf:{article_mod.AVAILABLE}', 0)}")
     print(f"Article kinds: {dict(kind_counts)}")
     print(f"Quality: {dict(quality_counts)}")
     print(f"Sources: {dict(source_counts)}")

@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from ..collection import CollectionStore
+from .common import citation_view
 
 
 def _escape(value: str) -> str:
@@ -19,19 +20,18 @@ def export_bib(store: CollectionStore, output: str | None = None) -> Path:
     path = Path(output) if output else Path.cwd() / f"{store.name}.bib"
     entries = []
     for article in store.iter_articles():
-        meta = article.get("metadata") or {}
-        ids = article.get("identifiers") or {}
-        if not meta.get("title"):
+        v = citation_view(article)
+        if not v.has_metadata:
             continue
         fields = {
-            "title": meta.get("title", ""),
-            "author": " and ".join(meta.get("authors") or []),
-            "journal": meta.get("journal", ""),
-            "year": str(meta.get("pub_year") or ""),
-            "doi": ids.get("doi", ""),
-            "pmid": ids.get("pmid", ""),
+            "title": v.title,
+            "author": " and ".join(v.authors),
+            "journal": v.journal,
+            "year": str(v.pub_year or ""),
+            "doi": v.doi,
+            "pmid": v.pmid,
         }
-        body = [f"  {k} = {{{_escape(v)}}}" for k, v in fields.items() if v]
+        body = [f"  {k} = {{{_escape(val)}}}" for k, val in fields.items() if val]
         entries.append("@article{" + _key(article) + ",\n" + ",\n".join(body) + "\n}")
     path.write_text("\n\n".join(entries) + ("\n" if entries else ""), encoding="utf-8")
     return path

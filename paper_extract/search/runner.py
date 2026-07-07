@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
+from .. import article as article_mod
+from ..article import new_article
 from ..collection import CollectionStore
-from ..schema import new_article
-from ..sources.search import compare_sources, europepmc_fetcher, pubmed_fetcher
 from ..time import utc_now
+from .sources import DEFAULT_SOURCES, Source, merge_results
 
 
 def query_from_plan(plan: dict[str, Any]) -> str:
@@ -24,6 +24,7 @@ def run_search(
     min_year: str | None = None,
     max_year: str | None = None,
     max_results: int = 1000,
+    sources: list[Source] | None = None,
 ) -> Path:
     started = utc_now()
     plan = None
@@ -43,30 +44,21 @@ def run_search(
         raise ValueError("Search query is empty")
 
     items = []
-    epmc_docs = []
-    pubmed_docs = []
-    try:
-        epmc_docs = europepmc_fetcher.search_europepmc(query, max_results=max_results, min_year=min_year, max_year=max_year)
-    except Exception as e:
-        items.append({"source": "epmc", "status": "failed", "reason": type(e).__name__})
-    try:
-        pubmed_fetcher.load_env()
-        api_key = os.environ.get("NCBI_API_KEY", "")
-        pubmed_docs = pubmed_fetcher.search_pubmed(query, api_key=api_key, max_results=max_results, min_year=min_year, max_year=max_year)
-    except Exception as e:
-        items.append({"source": "pubmed", "status": "failed", "reason": type(e).__name__})
+    results: dict[str, list[dict[str, Any]]] = {}
+    for src in (sources if sources is not None else DEFAULT_SOURCES):
+        try:
+            docs = src.search(query, min_year=min_year, max_year=max_year, max_results=max_results)
+        except Exception as e:
+            items.append({"source": src.name, "status": "failed", "reason": type(e).__name__})
+            continue
+        if docs:
+            results[src.name] = docs
 
-    if epmc_docs and pubmed_docs:
-        docs = compare_sources.compare_and_merge(epmc_docs, pubmed_docs)
-    else:
-        docs = epmc_docs or pubmed_docs
-
-    default_sources = ["epmc", "pubmed"] if epmc_docs and pubmed_docs else (["epmc"] if epmc_docs else ["pubmed"])
+    docs = merge_results(results)
     succeeded = 0
     for doc in docs:
         article = new_article(doc)
-        article["source"]["metadata"] = doc.get("_sources") or default_sources
-        article["status"]["metadata"] = "found"
+        article_mod.mark_metadata(article, found=True, sources=doc.get("_sources") or ["unknown"])
         store.upsert_article(article)
         items.append({"article_id": article["article_id"], "status": "succeeded", "attempts": []})
         succeeded += 1

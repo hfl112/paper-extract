@@ -5,7 +5,7 @@ import json
 from typing import Any, Iterator
 from urllib.parse import parse_qs, urlparse
 
-from ..paths import library_config_path
+from .paths import library_config_path
 
 
 # Query-string keys that indicate a per-session credential/signature.

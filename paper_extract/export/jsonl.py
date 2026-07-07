@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from ..collection import CollectionStore
-from ..fetch.links import redact_sensitive_links
+from ..links import redact_sensitive_links
 
 
 def export_jsonl(store: CollectionStore, output: str | None = None) -> Path:

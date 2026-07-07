@@ -24,7 +24,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from paper_extract.collection import CollectionStore  # noqa: E402
-from paper_extract.fetch.links import mark_sensitive_links  # noqa: E402
+from paper_extract.links import mark_sensitive_links  # noqa: E402
 from paper_extract.schema import new_article  # noqa: E402
 
 COLLECTION = "smoke_step5"
