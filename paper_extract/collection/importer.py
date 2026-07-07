@@ -7,7 +7,8 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from ..schema import new_article
+from .. import article as article_mod
+from ..article import new_article
 from ..sources.search import europepmc_fetcher
 from ..time import utc_now
 from .store import CollectionStore
@@ -123,16 +124,15 @@ def import_pdf(store: CollectionStore, path: Path) -> dict[str, Any]:
         return {"article_id": "", "status": "failed", "reason": "file_not_found", "attempts": []}
     try:
         article = new_article(_enrich(_extract_pdf_seed(path)))
-        if article["status"]["metadata"] == "found":
-            article["source"]["metadata"] = ["import"]
+        if article_mod.metadata_found(article):
+            article_mod.mark_metadata(article, found=True, sources=["import"])
         article = store.upsert_article(article)  # merge onto any existing article first
         article_id = article["article_id"]
         dest = store.pdf_path(article_id)
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, dest)
-        article.setdefault("files", {})["pdf"] = str(dest.relative_to(store.article_dir(article_id)))
-        article.setdefault("status", {})["pdf"] = "available"
-        article.setdefault("source", {})["pdf"] = "import"
+        rel = str(dest.relative_to(store.article_dir(article_id)))
+        article_mod.record_pdf(article, rel, "import")
         store.write_article(article)  # write_article, not upsert: merge_article drops files/source
         return {"article_id": article_id, "status": "succeeded", "attempts": []}
     except Exception as e:
@@ -198,12 +198,12 @@ def import_articles(
         try:
             enriched = _enrich(row)
             article = new_article(enriched)
-            if article["status"]["metadata"] == "not_started":
-                article["status"]["metadata"] = "failed"
-            if article["status"]["metadata"] == "found":
-                article["source"]["metadata"] = ["import"]
+            if article_mod.metadata_found(article):
+                article_mod.mark_metadata(article, found=True, sources=["import"])
+            else:
+                article_mod.mark_metadata(article, found=False)
             store.upsert_article(article)
-            status = "succeeded" if article["status"]["metadata"] == "found" else "failed"
+            status = "succeeded" if article_mod.metadata_found(article) else "failed"
             succeeded += int(status == "succeeded")
             failed += int(status == "failed")
             items.append({"article_id": article["article_id"], "status": status, "attempts": []})

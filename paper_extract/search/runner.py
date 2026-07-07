@@ -5,8 +5,9 @@ import os
 from pathlib import Path
 from typing import Any
 
+from .. import article as article_mod
+from ..article import new_article
 from ..collection import CollectionStore
-from ..schema import new_article
 from ..sources.search import compare_sources, europepmc_fetcher, pubmed_fetcher
 from ..time import utc_now
 
@@ -65,8 +66,7 @@ def run_search(
     succeeded = 0
     for doc in docs:
         article = new_article(doc)
-        article["source"]["metadata"] = doc.get("_sources") or default_sources
-        article["status"]["metadata"] = "found"
+        article_mod.mark_metadata(article, found=True, sources=doc.get("_sources") or default_sources)
         store.upsert_article(article)
         items.append({"article_id": article["article_id"], "status": "succeeded", "attempts": []})
         succeeded += 1

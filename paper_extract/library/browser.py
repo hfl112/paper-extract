@@ -537,7 +537,8 @@ def _fetch_pdf_via_proxy(page, doi: str) -> tuple[bytes | None, str, str]:
 
 def _apply_pdf_to_article(article: dict, pdf: bytes, url: str, source_tag: str):
     """Parse PDF bytes into sections and write them into the article. Returns article|None."""
-    from ..fetch import artifacts, quality, links as links_mod
+    from ..fetch import artifacts, links as links_mod
+    from .. import article as article_mod
     from ..sources.fulltext import fulltext_fetcher, fulltext_sources
 
     parsed, ptag = fulltext_sources._parse_pdf_3layer(pdf)
@@ -549,7 +550,7 @@ def _apply_pdf_to_article(article: dict, pdf: bytes, url: str, source_tag: str):
     doc = fulltext_fetcher.build_doc(flat.get("pmcid") or "", parsed, flat, prov)
     if (doc.get("quality") or {}).get("quality_status") == "reject":
         return None
-    updated = quality.apply_fulltext_doc(article, doc)
+    updated = article_mod.apply_fulltext(article, doc)
     links_mod.mark_sensitive_links(updated)
     return updated
 
@@ -790,7 +791,8 @@ def library_login(landing_url: str | None = None, proxy_login_url: str | None = 
 
 
 def fetch_json_library(store, article: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
-    from ..fetch import artifacts, quality, links as links_mod
+    from ..fetch import artifacts, links as links_mod
+    from .. import article as article_mod
     from ..sources.fulltext import fulltext_fetcher, fulltext_sources
     from .libkey import staged_extension
 
@@ -813,7 +815,7 @@ def fetch_json_library(store, article: dict[str, Any]) -> tuple[dict[str, Any] |
                     "accessed_at": fulltext_fetcher._now()}
             doc = fulltext_fetcher.build_doc(flat.get("pmcid") or "", parsed, flat, prov)
             if (doc.get("quality") or {}).get("quality_status") != "reject":
-                updated = quality.apply_fulltext_doc(article, doc)
+                updated = article_mod.apply_fulltext(article, doc)
                 links_mod.mark_sensitive_links(updated)
                 return updated, ""
             reasons.append("institutional_reject")
@@ -844,7 +846,7 @@ def fetch_json_library(store, article: dict[str, Any]) -> tuple[dict[str, Any] |
     flat, warning = artifacts.flatten_article(article)
     doc, reason = fulltext_sources.get_fulltext(flat, sources=["ezproxy_html", "ezproxy_pdf"])
     if doc is not None:
-        updated = quality.apply_fulltext_doc(article, doc)
+        updated = article_mod.apply_fulltext(article, doc)
         links_mod.mark_sensitive_links(updated)
         return updated, ""
     reasons.append(f"cookie:{reason}")
@@ -853,6 +855,7 @@ def fetch_json_library(store, article: dict[str, Any]) -> tuple[dict[str, Any] |
 
 def fetch_pdf_library(store, article: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
     from ..fetch import artifacts, links as links_mod
+    from .. import article as article_mod
     from .libkey import staged_extension
 
     ids = article.get("identifiers") or {}
@@ -896,9 +899,8 @@ def fetch_pdf_library(store, article: dict[str, Any]) -> tuple[dict[str, Any] | 
     path = store.pdf_path(article["article_id"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(pdf)
-    article.setdefault("files", {})["pdf"] = str(path.relative_to(store.article_dir(article["article_id"])))
-    article.setdefault("status", {})["pdf"] = "available"
-    article.setdefault("source", {})["pdf"] = "library"
+    rel = str(path.relative_to(store.article_dir(article["article_id"])))
+    article_mod.record_pdf(article, rel, "library")
     if pdf_url:
         article.setdefault("links", {}).setdefault("library", {})["pdf"] = pdf_url
     links_mod.mark_sensitive_links(article)

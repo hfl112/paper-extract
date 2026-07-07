@@ -156,11 +156,13 @@ class CollectionStore:
     def update_stats(self, articles: list[dict[str, Any]] | None = None) -> None:
         if articles is None:
             articles = self.iter_articles()
+        from .. import article as article_mod
+
         data = self.read_collection()
         data["stats"] = {
             "article_count": len(articles),
-            "fulltext_count": sum(1 for a in articles if (a.get("status") or {}).get("fulltext") == "available"),
-            "pdf_count": sum(1 for a in articles if (a.get("status") or {}).get("pdf") == "available"),
+            "fulltext_count": sum(1 for a in articles if article_mod.has_fulltext(a)),
+            "pdf_count": sum(1 for a in articles if article_mod.has_pdf(a)),
         }
         self.write_collection(data)
 

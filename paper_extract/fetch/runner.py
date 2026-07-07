@@ -6,10 +6,11 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from .. import article as article_mod
 from ..collection import CollectionStore
 from ..time import utc_now
 from .. import library
-from . import artifacts, quality
+from . import artifacts
 
 
 # Per-article wait (seconds) between consecutive library-access articles, so rapid
@@ -79,7 +80,7 @@ def run_fetch(
     # open the browser once and let the user log in. Non-interactive (agent/no TTY):
     # never wait for a human — require a configured session and fail fast otherwise.
     if access in {"library", "both"} and any(
-        (a.get("status") or {}).get("fulltext") != "available" or force for a in articles
+        not article_mod.has_fulltext(a) or force for a in articles
     ):
         ok, msg = library.prepare_session(interactive=interactive)
         if not ok:
@@ -91,9 +92,8 @@ def run_fetch(
     total = len(articles)
 
     def _needs(a: dict) -> bool:
-        st = a.get("status") or {}
-        nj = output_format in {"json", "both"} and (force or st.get("fulltext") != "available")
-        np = output_format in {"pdf", "both"} and (force or st.get("pdf") != "available")
+        nj = output_format in {"json", "both"} and (force or not article_mod.has_fulltext(a))
+        np = output_format in {"pdf", "both"} and (force or not article_mod.has_pdf(a))
         return nj or np
 
     to_attempt = sum(1 for a in articles if _needs(a))
@@ -110,9 +110,8 @@ def run_fetch(
               flush=True)
 
     for article in articles:
-        status = article.get("status") or {}
-        prior_ft_ok = status.get("fulltext") == "available"
-        prior_pdf_ok = status.get("pdf") == "available"
+        prior_ft_ok = article_mod.has_fulltext(article)
+        prior_pdf_ok = article_mod.has_pdf(article)
 
         want_json = output_format in {"json", "both"}
         want_pdf = output_format in {"pdf", "both"}
@@ -158,9 +157,9 @@ def run_fetch(
 
         # Failure handling that never destroys existing successful artifacts.
         if need_json and not json_ok and not prior_ft_ok:
-            quality.reset_fulltext(article)  # nothing good existed -> mark failed, keep abstract only
+            article_mod.reset_fulltext(article)  # nothing good existed -> mark failed, keep abstract only
         if need_pdf and not pdf_ok and not prior_pdf_ok:
-            article.setdefault("status", {})["pdf"] = "failed"
+            article_mod.mark_pdf_failed(article)
 
         ok = json_ok and pdf_ok
         store.write_article(article)

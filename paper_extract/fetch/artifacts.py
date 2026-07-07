@@ -5,10 +5,10 @@ import xml.etree.ElementTree as ET
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from .. import article as article_mod
 from ..collection import CollectionStore
 from ..sources.fulltext import fulltext_fetcher, fulltext_sources
 from . import links as links_mod
-from . import quality as quality_mod
 
 
 def flatten_article(article: dict[str, Any], validate_pmcid: bool = True) -> tuple[dict[str, Any], str]:
@@ -128,7 +128,7 @@ def fetch_json_open(article: dict[str, Any]) -> tuple[dict[str, Any] | None, str
         article.setdefault("identifiers", {})["pmcid"] = ""
         article.setdefault("links", {}).setdefault("pmc", {}).pop("page", None)
         article.setdefault("links", {}).setdefault("pmc", {}).pop("pdf", None)
-    updated = quality_mod.apply_fulltext_doc(article, doc)
+    updated = article_mod.apply_fulltext(article, doc)
     links_mod.mark_sensitive_links(updated)
     return updated, warning
 
@@ -142,9 +142,8 @@ def fetch_pdf_open(store: CollectionStore, article: dict[str, Any]) -> tuple[dic
     path = store.pdf_path(article["article_id"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(pdf)
-    article.setdefault("files", {})["pdf"] = str(path.relative_to(store.article_dir(article["article_id"])))
-    article.setdefault("status", {})["pdf"] = "available"
-    article.setdefault("source", {})["pdf"] = "open"
+    rel = str(path.relative_to(store.article_dir(article["article_id"])))
+    article_mod.record_pdf(article, rel, "open")
     if url:
         article.setdefault("links", {}).setdefault("publisher", {})["pdf"] = url
     links_mod.mark_sensitive_links(article)
