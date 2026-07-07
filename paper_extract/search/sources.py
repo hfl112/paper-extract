@@ -45,27 +45,15 @@ class PubMedSource:
 DEFAULT_SOURCES: list[Source] = [EuropePMCSource(), PubMedSource()]
 
 
-def merge_results(results: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    """Merge per-source doc lists into one, stamping `_sources` provenance.
-
-    Europe PMC + PubMed use the field-level enrichment merge (compare_sources);
-    any other combination is a dedup-by-key union. `results` maps source name ->
-    docs and preserves source order."""
-    if "epmc" in results and "pubmed" in results:
-        merged = compare_sources.compare_and_merge(results["epmc"], results["pubmed"])
-        for name, docs in results.items():
-            if name in ("epmc", "pubmed"):
-                continue
-            for d in docs:
-                d.setdefault("_sources", [name])
-            merged.extend(docs)
-        return merged
-
-    seen: dict[str, dict] = {}
+def _dedup_union(streams: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Dedup docs across all streams by `doc_key`, unioning `_sources`. First
+    occurrence of a key wins its position; later duplicates only contribute their
+    source names. Docs with no key (no DOI/PMID) are kept as-is."""
+    seen: dict[str, dict[str, Any]] = {}
     out: list[dict[str, Any]] = []
-    for name, docs in results.items():
+    for docs in streams:
         for d in docs:
-            d.setdefault("_sources", [name])
+            d.setdefault("_sources", [])
             k = doc_key(d)
             if k and k in seen:
                 existing = seen[k]
@@ -77,3 +65,26 @@ def merge_results(results: dict[str, list[dict[str, Any]]]) -> list[dict[str, An
                 seen[k] = d
             out.append(d)
     return out
+
+
+def merge_results(results: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Merge per-source doc lists into one, deduping by `doc_key` and unioning
+    `_sources` provenance across every source.
+
+    Europe PMC + PubMed additionally get a field-level enrichment merge first
+    (`compare_sources.compare_and_merge` — unions MeSH/pub_types/... and stamps
+    `_sources`). Its output then flows through the same dedup loop as every other
+    source, so a third source sharing a DOI is deduped against it rather than
+    duplicated. `results` maps source name -> docs and preserves source order."""
+    streams: list[list[dict[str, Any]]] = []
+    handled: set[str] = set()
+    if "epmc" in results and "pubmed" in results:
+        streams.append(compare_sources.compare_and_merge(results["epmc"], results["pubmed"]))
+        handled = {"epmc", "pubmed"}
+    for name, docs in results.items():
+        if name in handled:
+            continue
+        for d in docs:
+            d.setdefault("_sources", [name])
+        streams.append(docs)
+    return _dedup_union(streams)
