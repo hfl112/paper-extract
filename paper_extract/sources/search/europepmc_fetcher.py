@@ -10,10 +10,11 @@
 import urllib.request
 import urllib.parse
 import urllib.error
-import http.client
 import json
 import time
 from typing import List, Dict, Optional
+
+from ._shared import retry_get
 
 BASE_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 PAGE_SIZE = 1000          # Europe PMC 单页上限
@@ -23,36 +24,7 @@ USER_AGENT = "paper-extract/1.0 (literature review tool)"
 
 def _request(url: str, max_retries: int = 5) -> dict:
     """带指数退避重试的 GET，返回解析后的 JSON。"""
-    delay = 1.0
-    for attempt in range(max_retries):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            # 429 限流 / 5xx 服务端错误才重试
-            if e.code in (429, 500, 502, 503, 504) and attempt < max_retries - 1:
-                print(f"  HTTP {e.code}，{delay:.0f}s 后重试 ({attempt + 1}/{max_retries})")
-                time.sleep(delay)
-                delay *= 2
-                continue
-            raise
-        except urllib.error.URLError as e:
-            if attempt < max_retries - 1:
-                print(f"  网络错误 {e.reason}，{delay:.0f}s 后重试 ({attempt + 1}/{max_retries})")
-                time.sleep(delay)
-                delay *= 2
-                continue
-            raise
-        except (http.client.IncompleteRead, ConnectionError, TimeoutError) as e:
-            # 连接层读取中断（大响应体常见），同样退避重试
-            if attempt < max_retries - 1:
-                print(f"  读取中断 {type(e).__name__}，{delay:.0f}s 后重试 ({attempt + 1}/{max_retries})")
-                time.sleep(delay)
-                delay *= 2
-                continue
-            raise
-    raise RuntimeError("超过最大重试次数")
+    return json.loads(retry_get(url, USER_AGENT, max_retries).decode("utf-8"))
 
 
 def normalize(raw: Dict) -> Dict:

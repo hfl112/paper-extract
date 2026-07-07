@@ -12,14 +12,7 @@ compare_and_merge() 做两件事：
 
 from typing import Dict, List
 
-
-def key_of(doc: Dict) -> str:
-    """统一去重键：归一化 DOI 优先，否则 PMID。"""
-    doi = (doc.get("doi") or "").lower().strip()
-    if doi:
-        return f"doi:{doi}"
-    pmid = (doc.get("pmid") or "").strip()
-    return f"pmid:{pmid}" if pmid else ""
+from ._shared import doc_key as key_of  # noqa: F401  (shared dedup key)
 
 
 def index(docs: List[Dict]) -> Dict[str, Dict]:
