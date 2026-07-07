@@ -2,6 +2,7 @@
 
 **Auditable literature collections for biomedical LLM/RAG workflows.**
 
+[![CI](https://github.com/hfl112/paper-extract/actions/workflows/ci.yml/badge.svg)](https://github.com/hfl112/paper-extract/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/offline%20tests-75%20passing-brightgreen.svg)](tests/)

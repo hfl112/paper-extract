@@ -7,12 +7,12 @@
 仅依赖 Python 标准库；不需要 API key（Europe PMC 免费），不碰数据库。
 """
 
-import urllib.request
-import urllib.parse
-import urllib.error
 import json
 import time
-from typing import List, Dict, Optional
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Dict, List, Optional
 
 from ._shared import retry_get
 

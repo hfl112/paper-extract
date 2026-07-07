@@ -9,7 +9,7 @@ library_download.py – EZProxy 代理 URL / DOI 解析 / PDF 链接提取的纯
 from __future__ import annotations
 
 import re
-from typing import Optional, List
+from typing import List, Optional
 from urllib.parse import urlparse
 
 import requests

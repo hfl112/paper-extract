@@ -9,7 +9,6 @@ from ..paths import collections_root
 from ..schema import SCHEMA_VERSION, merge_article
 from ..time import stamp_from_iso, utc_now
 
-
 CSV_COLUMNS = [
     "article_id",
     "title",

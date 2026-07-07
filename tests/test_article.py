@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from paper_extract import article
 
-
 # --- golden schema snapshot (updated_at normalized) -------------------------
 
 def _norm(a: dict) -> dict:

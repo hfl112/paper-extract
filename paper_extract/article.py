@@ -14,9 +14,9 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from .collection.ids import article_id as make_article_id, normalize_doi
+from .collection.ids import article_id as make_article_id
+from .collection.ids import normalize_doi
 from .time import utc_now
-
 
 SCHEMA_VERSION = "1.0"
 
@@ -89,7 +89,7 @@ def new_article(seed: Mapping[str, Any] | None = None) -> dict[str, Any]:
     abstract = seed.get("abstract") or abstract
     aid = make_article_id({"doi": doi, "pmid": pmid, "pmcid": pmcid, "title": seed.get("title")})
     now = utc_now()
-    article = {
+    article: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "article_id": aid,
         "identifiers": {"doi": doi or "", "pmid": pmid or "", "pmcid": pmcid or ""},

@@ -13,7 +13,6 @@ from ..sources.search import europepmc_fetcher
 from ..time import utc_now
 from .store import CollectionStore
 
-
 _DOI_RE = re.compile(r"10\.\d{4,9}/[^\s\"'<>]+", re.I)
 
 

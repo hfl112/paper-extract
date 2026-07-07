@@ -18,7 +18,6 @@ from itertools import combinations
 
 from ..time import utc_now
 
-
 # ── LLM prompts ────────────────────────────────────────────────────────────────
 ALIAS_PROMPT = """\
 You are a biomedical literature search assistant.

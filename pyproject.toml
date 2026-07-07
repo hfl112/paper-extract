@@ -26,7 +26,7 @@ dependencies = ["requests"]
 pdf = ["pymupdf", "pytesseract", "pillow", "docling"]
 browser = ["cloakbrowser", "browser_cookie3"]
 llm = ["google-genai", "openai", "anthropic"]
-dev = ["pytest"]
+dev = ["pytest", "ruff", "mypy"]
 
 [project.urls]
 Homepage = "https://github.com/hfl112/paper-extract"
@@ -38,3 +38,33 @@ paper-extract = "paper_extract.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["paper_extract*", "llmclient*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["llmclient"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+# Keep all pyflakes (F: unused/undefined names) + import-sorting (I). Ignore the
+# stylistic pycodestyle rules the codebase uses on purpose: compact `a; b`
+# retry loops (E702), long lines (E501), local mid-file imports (E402),
+# short names like `l`/`_re` (E741), and a couple of lambdas (E731).
+ignore = ["E402", "E501", "E702", "E731", "E741"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+# Type-check only the files below; use their imports for types but don't report
+# errors inside those dependencies (vendored llmclient, not-yet-typed modules).
+follow_imports = "silent"
+# Scoped to the well-typed modules for now; widen as types land elsewhere.
+files = [
+    "paper_extract/article.py",
+    "paper_extract/assemble.py",
+    "paper_extract/search/sources.py",
+    "paper_extract/export/common.py",
+    "paper_extract/links.py",
+    "paper_extract/paths.py",
+    "paper_extract/sources/search/_shared.py",
+]

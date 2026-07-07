@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from .collection import CollectionStore
 from .collection.importer import import_articles
