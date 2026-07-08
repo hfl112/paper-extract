@@ -31,9 +31,27 @@ def load_config() -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+        # utf-8-sig tolerates a BOM (e.g. from editing on Windows/PowerShell),
+        # which plain utf-8 would choke on.
+        return json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        # Callers get {} (treated as "unconfigured"); the actionable parse error
+        # is surfaced separately via config_error() so `library doctor` can show
+        # it instead of silently pretending there's no config.
         return {}
+
+
+def config_error() -> str | None:
+    """Return a human-readable parse error (including the config path) if the
+    config file exists but can't be parsed, else None."""
+    path = library_config_path()
+    if not path.exists():
+        return None
+    try:
+        json.loads(path.read_text(encoding="utf-8-sig"))
+        return None
+    except (OSError, json.JSONDecodeError) as e:
+        return f"could not parse config file {path}: {e}"
 
 
 def save_config(cfg: dict[str, Any]) -> None:

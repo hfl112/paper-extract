@@ -118,11 +118,22 @@ def cmd_library_login(args: argparse.Namespace) -> None:
         print("现在可运行：paper-extract fetch --collection <name> --output-format json --access library")
         return
 
-    from .library.browser import library_login
+    from .library.browser import doctor, library_login
 
     ok = library_login(landing_url=args.landing_url, proxy_login_url=args.proxy_login_url,
                         headless=args.headless, use_libkey=args.libkey)
-    print("Library login: " + ("captured session/cookies" if ok else "did not complete"))
+    if not ok:
+        print("Library login: did not complete")
+        return
+    # Login captured a session — but "logged in" and "ready to fetch" differ: the
+    # proxy route may still be undetected (e.g. after pure SSO). Say which.
+    d = doctor()
+    if d.get("ready"):
+        print("Library login: ready — proxy route detected. "
+              "Next: paper-extract fetch --collection <name> --output-format json --access library")
+    else:
+        print(f"Library login: captured session/cookies, but {d.get('reason')}.")
+        print(f"Next: {d.get('next_action')}")
 
 
 def build_parser() -> argparse.ArgumentParser:

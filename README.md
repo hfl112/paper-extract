@@ -224,6 +224,15 @@ How it works:
 - The proxy domain is **auto-detected from your session**; nothing is hardcoded
   to any school. Use `--speed normal`/`slow` if a publisher keeps challenging.
 
+If `paper-extract library doctor` reports **`proxy_route_undetected`** after you
+logged in (common with pure SSO/Shibboleth, which never traverses the EZProxy
+host), tell it your proxy explicitly — `{target}` is replaced with the
+publisher/DOI landing URL:
+
+```bash
+paper-extract library login --proxy-login-url 'https://login.libproxy.<institution>.edu/login?url={target}'
+```
+
 See [`skill/paper-extract/references/library-access.md`](skill/paper-extract/references/library-access.md)
 for the full decision tree and troubleshooting.
 

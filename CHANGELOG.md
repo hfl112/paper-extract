@@ -21,6 +21,15 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (optional `[pdf]` extra) with a filename fallback when it is not installed,
   then enriched via Europe PMC.
 
+### Fixed
+- **Library-login diagnostics.** `library doctor` now distinguishes "not logged
+  in" (`needs_login`) from "logged in but the institution proxy route wasn't
+  detected" (`proxy_route_undetected`, common after pure SSO) and gives
+  actionable next steps instead of an unhelpful "run library login" loop.
+  `library login` reports whether it's actually ready to fetch. Config files are
+  read BOM-tolerantly (utf-8-sig) and parse errors are surfaced in `doctor`
+  instead of being silently treated as "unconfigured".
+
 ### Changed
 - Internal architecture refactor — no change to CLI behavior or on-disk output:
   - The article schema and its state transitions now live in one **Article
