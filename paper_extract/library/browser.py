@@ -111,12 +111,25 @@ def doctor() -> dict:
     if not cb:
         return {"ready": False, "reason": "browser_unavailable",
                 "next_action": 'install browser support: pip install ".[browser]"', "checks": checks}
-    if not (suffix or tmpl):
-        return {"ready": False, "reason": "missing_proxy_suffix",
-                "next_action": "run: paper-extract library login", "checks": checks}
     if not profile_exists:
+        # No session yet — logging in is the first step (it usually also detects
+        # the proxy route). This covers "route known but not logged in" too.
         return {"ready": False, "reason": "needs_login",
                 "next_action": "run: paper-extract library login", "checks": checks}
+    if not (suffix or tmpl):
+        # Logged in (profile exists) but the institution proxy route wasn't
+        # detected — common with SSO/Shibboleth login, which doesn't traverse
+        # the EZProxy host. This is NOT a failed login.
+        cfg_path = config.library_config_path()
+        return {"ready": False, "reason": "proxy_route_undetected",
+                "next_action": (
+                    "logged in, but the institution proxy route wasn't detected. Do ONE of: "
+                    "(a) open a paywalled article through your proxy, then re-run "
+                    "'paper-extract library doctor'; "
+                    "(b) 'paper-extract library login "
+                    "--proxy-login-url \"https://<your-proxy-host>/login?url={target}\"'; "
+                    f"(c) set 'proxy_suffix' in {cfg_path}"),
+                "checks": checks}
     return {"ready": True, "reason": "ready",
             "next_action": "run: paper-extract fetch --access library",
             "checks": checks,

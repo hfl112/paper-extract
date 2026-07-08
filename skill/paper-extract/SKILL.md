@@ -5,127 +5,145 @@ description: Build an auditable local collection of biomedical papers — search
 
 # paper-extract
 
-Drives the `paper-extract` CLI (an installable Python package) to build
-reproducible, auditable literature collections. Each collection is a folder with
-`article.json` per paper, an `articles.csv` index, and a `logs/*.json` audit trail.
+Drives the `paper-extract` CLI (an installable Python package) to build reproducible, auditable literature collections.
+
+## Glossary
+
+Use these terms exactly — do not substitute with generic words like "dataset," "boundary," or "scraper."
+
+*   **Collection** — A dedicated directory on disk managing a group of papers. Contains a single `collection.json` manifest, an `articles.csv` flat index, and audit logs.
+*   **Article JSON** — The single source of truth for an article's data (located at `articles/<article_id>/article.json`), containing metadata, retrieved full-text sections, quality evaluation, and extraction results.
+*   **Search-Plan** — A declarative search definition mapping keywords, anchor terms (mandatory concepts), and logical matching criteria.
+*   **Fetch** — The retrieval of structured XML/HTML full-text and optional PDFs from open-access sources or institutional libraries.
+*   **Extract** — Running an LLM with a schema-enforced specification over retrieved full-text sections to produce a structured record stored in the Article JSON.
+*   **Provenance** — Execution metadata (model, spec_id, timestamps, and log IDs) attached to fetched and extracted data to guarantee auditability.
+*   **Audit Log** — A timestamped file located in the collection's `logs/` folder recording the exact parameters, inputs, outputs, and failures of every command execution.
 
 ## Scope
 
 Use this skill when the user wants to:
-- build a literature collection from a topic, query, DOI/PMID list, or CSV;
-- fetch structured full-text JSON and/or PDFs;
-- export a collection to BibTeX / RIS / CSV / JSONL;
-- retrieve paywalled full text through **their own** institutional access.
+- Build a literature collection from a query, DOI/PMID list, or local PDF directory.
+- Retrieve paywalled full text via **their own** valid institutional proxy or SSO session.
+- Extract structured, open-ended fields from full text using custom specifications.
+- Export collections to BibTeX, RIS, CSV, or RAG-ready JSONL format.
 
 Do NOT use this skill to:
-- bypass authentication or access controls;
-- auto-solve captchas (the user solves any challenge themselves, in the browser);
-- mass-download publisher content in violation of terms of service;
-- access content the user has no valid credentials for.
+- Automatically solve captchas, bypass proxy credentials, or mass-scrape publisher systems.
+- Manage Zotero databases directly (exports are strictly local file-based).
 
-Library access always runs through the user's own valid login; the tool never
-stores credentials and never circumvents authentication. If a request implies
-otherwise, decline the circumvention and offer the legitimate path.
+---
+
+## Workspace & Data Architecture
+
+An active collection is represented by a strict folder hierarchy. Always locate files within this structure:
+
+```text
+data/collections/<collection_name>/
+├── collection.json                   # Collection manifest (metadata & articles list)
+├── articles.csv                      # Tabular flat index (ID, title, journal, year)
+├── articles/
+│   └── <article_id>/                 # Article ID = doi_xxx or pmid_xxx
+│       ├── article.json              # Source of truth: metadata, sections, and extractions
+│       └── article.pdf               # Optional local PDF
+└── logs/
+    ├── search_<timestamp>.json       # Audit trail for query/import executions
+    ├── fetch_<timestamp>.json        # Audit trail for full-text retrievals
+    └── status_<timestamp>.json       # Audit trail for collection status reporting
+```
+
+---
+
+## Workflow & State Machine
+
+The pipeline operates in sequential stages:
+
+```mermaid
+flowchart TD
+    Plan["1. search-plan<br/>(Deterministic or LLM)"] --> Search["2. search / import<br/>(Europe PMC / PubMed / DOI)"]
+    Search --> Fetch["3. fetch<br/>(Structured XML / PDF)"]
+    Fetch --> Extract["4. extract<br/>(Schema-Enforced LLM)"]
+    Extract --> Export["5. export<br/>(BibTeX / RIS / CSV / JSONL)"]
+    
+    subgraph Audit Trail [Audit logs generated at every stage]
+        Search -.-> LogS[search log]
+        Fetch -.-> LogF[fetch log]
+        Extract -.-> LogE[extract log]
+    end
+```
+
+### Article Lifecycle Status
+An article's `status` transitions within `article.json` as follows:
+
+```mermaid
+stateDiagram-v2
+    [*] --> metadata_found: search / import
+    metadata_found --> fulltext_available: fetch (success)
+    metadata_found --> fetch_failed: fetch (fail)
+    fulltext_available --> extracted: extract (success)
+    fulltext_available --> extract_failed: extract (fail)
+```
+
+---
 
 ## Prerequisites
 
-- The `paper-extract` package must be importable. Verify with `paper-extract --help`
-  (or `uv run paper-extract --help` from the project). Run the CLI in the same
-  environment where it was installed.
-- Install if missing (uv recommended, no conda needed; run from the repo root):
-  - `uv venv --python 3.11`, then `source .venv/bin/activate`, then
-    `uv pip install ".[browser,pdf,llm]"` — engine + browser/PDF extras + LLM provider SDKs.
-  - ALWAYS activate the venv before `uv pip install`: if a conda env is active and no
-    venv is activated, uv installs into the conda env instead of `.venv`.
-  - Plain pip works too (inside the activated venv): `pip install ".[browser,pdf,llm]"`.
-- If the user set up a venv, prefix commands with `uv run` (or activate the venv).
+- Verify package installation using: `paper-extract --help` or `uv run paper-extract --help` from the project root.
+- Install developer dependencies if missing:
+  `uv venv --python 3.11 && source .venv/bin/activate && uv pip install ".[browser,pdf,llm,dev]"`
+- Always activate the virtual environment (`.venv`) before running pip to prevent installing into external Conda or system environments.
 
-## Workflow
+---
 
-```text
-search-plan → search / collection import → fetch → status → collection export
-```
-
-Pick the entry point from what the user has:
-- **A topic/question** → `search-plan` (optionally LLM) then `search`.
-- **A raw query string** → `search --query`.
-- **A list of DOIs/PMIDs or a CSV/JSON** → `collection import`.
-
-Then `fetch` full text, `status` to review, `collection export` to hand off.
-
-## Command quick reference
+## Command Quick Reference
 
 ```bash
-# Plan (deterministic):
-paper-extract search-plan --collection C --keyword A --keyword B --anchor A --no-llm
-# Plan (LLM aliases + anchor/M-of-N; needs a provider key):
-paper-extract search-plan --collection C --prompt "…" --provider gemini
+# 1. Plan keywords and logical criteria (LLM or deterministic)
+paper-extract search-plan --collection demo --keyword "pediatric" --keyword "dasatinib" --anchor "dasatinib" --no-llm
 
-paper-extract search --collection C --query '…' --max 30      # or omit --query to use current plan
-paper-extract collection import --collection C --input-doi 10.x/y --input-pmid 12345678
-paper-extract collection import --collection C --input file.csv        # or --input-json file.json
+# 2. Execute query search based on the plan
+paper-extract search --collection demo --max 30
 
-paper-extract fetch --collection C --output-format json --access open  # --output-format REQUIRED
-paper-extract fetch --collection C --output-format both --access library --speed normal --limit 5
+# 3. Import list of DOIs directly
+paper-extract collection import --collection demo --input-doi 10.1002/pbc.21368
 
-paper-extract status --collection C
-paper-extract collection export --collection C --to bib   # bib | ris | csv | jsonl
+# 4. Fetch full text (Always specify --output-format)
+paper-extract fetch --collection demo --output-format json --access open
+
+# 5. Extract structured fields using a custom specification
+paper-extract extract --collection demo --spec spec.yaml --provider gemini
+
+# 6. Check collection quality and export
+paper-extract status --collection demo
+paper-extract collection export --collection demo --to jsonl
 ```
 
-## Rules that matter
+---
 
-- `fetch --output-format` is **required** (`json` | `pdf` | `both`). Never omit it.
-- `--access`: `open` (PMC/OA/publisher/PDF) | `library` (institutional) | `both` (open then library).
-- Author search uses Europe PMC field syntax, e.g. `--query 'AUTH:"Houghton PJ" AND AUTH:"Smith MA"'`.
-- No default year filter; add `--min-year` / `--max-year` to restrict.
-- `--speed` (library only): `fast` (default, fixed 8s between articles) | `normal`
-  (random 5–60s) | `slow` (random 50–300s). Use `normal`/`slow` if a publisher
-  keeps challenging the session.
-- fetch skips already-successful articles; add `--force` to redo. `--force` never
-  destroys existing good full text on a failed re-fetch.
-- Exports write to the current directory (`./<name>.<ext>`). Never touch Zotero.
-- Sensitive (proxy/token) links are auto-stripped from exports; never surface or
-  commit cookies, tokens, `.env`, `api.md`, PDFs, or anything under `data/`.
+## Rules that Matter
 
-## Reading results
+- **Required Output Format:** The `--output-format` option (`json` | `pdf` | `both`) is **mandatory** for `fetch`. Never omit it.
+- **Section Preference:** Favor structured JSON sections over PDFs. Downstream RAG and LLM tasks must target the clean text body inside `article.json` rather than performing OCR on PDFs.
+- **Access Modes (`--access`):**
+  - `open`: Retrieves open-access XML/PDFs (Europe PMC / publishers).
+  - `library`: Employs interactive browser profiles utilizing user's local proxy.
+  - `both`: Attempts open access first, falling back to library credentials.
+- **Incremental Runs:** `fetch` and `extract` commands are idempotent. They automatically skip already-completed articles unless the `--force` flag is specified.
 
-Every command writes `data/collections/<C>/logs/<cmd>_<ts>.json`. After a run,
-read the newest log and report from its `summary` (total/succeeded/failed/skipped)
-and per-item `attempts[].reason`. For full text, check the article's
-`status.fulltext`, `source.fulltext`, and `quality.status` in `article.json`.
-The CLI prints the log path on completion.
+---
 
-## Institutional / library full text
+## Institutional & Library Access Protocol
 
-Login is INTERACTIVE and is the USER's job. **Never try to log in for them** —
-SSO / captcha / 2FA / school policy are theirs to handle in their own browser.
+1.  **Check Readiness:** Always run `paper-extract library doctor` before initiating library fetches.
+2.  **Request User Login:** If the doctor reports `NOT READY`, pause execution and instruct the user to run `paper-extract library login` in their terminal.
+3.  **Non-Interactive Execution:** Once authorized, run fetches using `--non-interactive` to prevent blocking or hanging in headful browser prompts:
+    `paper-extract fetch --collection C --output-format both --access library --non-interactive`
+4.  **No Automating Credentials:** Never attempt to prompt the user for password credentials or solve captchas programmatically.
 
-Agent flow for `--access library`:
-1. Run `paper-extract library doctor` (read-only, never opens a browser). If it
-   reports NOT READY, STOP and tell the user to run `paper-extract library login`
-   in **their own terminal** (it opens a browser and waits for Enter), then
-   continue once they confirm.
-2. When ready, batch-fetch non-interactively:
-   `paper-extract fetch --collection C --output-format both --access library --non-interactive`
-   `--non-interactive` never opens a login prompt: it reuses the session the user
-   established and fails fast (per article, on a login page) instead of hanging.
-   In a real TTY you may omit it — fetch then opens the login browser once itself.
-   The browser profile now persists a stable fingerprint seed; login and fetch
-   must reuse the same profile so challenge-clearance cookies remain valid.
+---
 
-During interactive library fetches, if a captcha/login wall appears, the user
-solves it in the browser window only. The tool polls the page and continues
-automatically when the wall clears; do not ask the user to press Enter for each
-article.
+## Rejected Framings & Anti-Patterns
 
-**Before any `--access library` work read `references/library-access.md`** — setup
-decision tree, "log in once → batch many", and troubleshooting (captcha, session
-expiry, proxy auto-detection). The LibKey-extension path is macOS + Chrome only.
-
-## LLM search plans
-
-`search-plan --prompt` and alias expansion use the bundled `llmclient` package
-(Gemini/OpenAI/DeepSeek/Claude). If the user has no API key configured, the LLM
-paths fail with a clear error — fall back to `--no-llm` with explicit `--keyword`s,
-or ask which provider/key to use. Provider = `--provider` arg → `$LLM_PROVIDER` →
-first provider with a key in the environment / `.env`.
+*   *Synonym Substitution:* Avoid calling a "Collection" a "Dataset" or "Database". The software relies on strict collection directories.
+*   *Zotero Integration:* Do not assume or attempt Zotero synchronization. All exports must write to local files in the current working directory.
+*   *Leaking Credentials:* Never surface, export, or check in URLs containing institutional proxy tokens, SSO cookies, or `.env` files.
+*   *Hardcoded Extraction Specs:* Do not hardcode extraction fields. The `extract` subcommand must accept open-ended specs from the user.

@@ -75,8 +75,49 @@ def test_doctor_reports_needs_login_without_config(tmp_path, monkeypatch):
     monkeypatch.setattr(browser, "_profile_dir", lambda: str(tmp_path / "profile"))
     d = browser.doctor()
     assert d["ready"] is False
-    assert d["reason"] in ("browser_unavailable", "missing_proxy_suffix", "needs_login")
+    assert d["reason"] in ("browser_unavailable", "needs_login", "proxy_route_undetected", "config_error")
     assert "library login" in d["next_action"] or "browser" in d["next_action"]
+
+
+def _pretend_cloakbrowser_installed(monkeypatch):
+    import importlib.util as _ilu
+    _orig = _ilu.find_spec
+    monkeypatch.setattr(_ilu, "find_spec",
+                        lambda name, *a, **k: True if name == "cloakbrowser" else _orig(name, *a, **k))
+
+
+def test_doctor_proxy_route_undetected_when_logged_in(tmp_path, monkeypatch):
+    # Profile exists (logged in) but no proxy_suffix/template detected -> a distinct,
+    # actionable state, NOT "needs_login" (the SSO-first trap).
+    _point_config_at(tmp_path, monkeypatch)
+    _pretend_cloakbrowser_installed(monkeypatch)
+    import paper_extract.library.browser as browser
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    monkeypatch.setattr(browser, "_profile_dir", lambda: str(profile))
+    d = browser.doctor()
+    assert d["ready"] is False
+    assert d["reason"] == "proxy_route_undetected"
+    assert "--proxy-login-url" in d["next_action"] and "{target}" in d["next_action"]
+
+
+def test_cmd_library_login_hint_when_route_undetected(monkeypatch, capsys):
+    import argparse
+
+    import paper_extract.cli as cli
+    import paper_extract.library.browser as browser
+    monkeypatch.setattr(browser, "library_login", lambda **kw: True)
+    monkeypatch.setattr(browser, "doctor", lambda: {
+        "ready": False, "reason": "proxy_route_undetected",
+        "next_action": "logged in, but ... 'paper-extract library login --proxy-login-url \"...{target}\"' ...",
+        "checks": {},
+    })
+    args = argparse.Namespace(from_chrome=False, landing_url=None, proxy_login_url=None,
+                              headless=False, libkey=None, all_domains=False)
+    cli.cmd_library_login(args)
+    out = capsys.readouterr().out
+    assert "captured session/cookies, but" in out
+    assert "--proxy-login-url" in out
 
 
 def test_prepare_session_non_interactive_fails_fast_when_not_ready(tmp_path, monkeypatch):
