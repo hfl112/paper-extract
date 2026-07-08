@@ -98,16 +98,22 @@ def doctor() -> dict:
     from .libkey import staged_extension
 
     cb = importlib.util.find_spec("cloakbrowser") is not None
+    cfg_err = config.config_error()
     suffix = config.get_proxy_suffix()
     tmpl = config.get_login_url_template()
     profile_exists = Path(_profile_dir()).exists()
     checks = {
+        "config": "parse_error" if cfg_err else "OK",
         "cloakbrowser_installed": cb,
         "proxy_suffix": suffix or "",
         "login_url_template": bool(tmpl),
         "browser_profile": profile_exists,
         "libkey_extension": staged_extension() is not None,
     }
+    if cfg_err:
+        return {"ready": False, "reason": "config_error",
+                "next_action": f"{cfg_err} — fix the JSON (remove a BOM or trailing commas)",
+                "checks": checks}
     if not cb:
         return {"ready": False, "reason": "browser_unavailable",
                 "next_action": 'install browser support: pip install ".[browser]"', "checks": checks}

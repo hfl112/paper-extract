@@ -13,6 +13,27 @@ def _point_config_at(tmp_path, monkeypatch):
     return cfg_path
 
 
+def test_load_config_tolerates_utf8_bom(tmp_path, monkeypatch):
+    cfg_path = _point_config_at(tmp_path, monkeypatch)
+    cfg_path.write_bytes(b"\xef\xbb\xbf" + b'{"proxy_suffix": "libproxy.myuni.edu"}')
+    assert config.load_config().get("proxy_suffix") == "libproxy.myuni.edu"
+    assert config.get_proxy_suffix() == "libproxy.myuni.edu"
+    assert config.config_error() is None
+
+
+def test_config_error_and_doctor_report_broken_json(tmp_path, monkeypatch):
+    cfg_path = _point_config_at(tmp_path, monkeypatch)
+    cfg_path.write_text("{ not: valid json,,, }", encoding="utf-8")
+    err = config.config_error()
+    assert err is not None and str(cfg_path) in err
+    import paper_extract.library.browser as browser
+    d = browser.doctor()
+    assert d["ready"] is False
+    assert d["reason"] == "config_error"
+    assert str(cfg_path) in d["next_action"]
+    assert d["checks"]["config"] == "parse_error"
+
+
 def test_detect_proxy_suffix_from_cookie_domain():
     cookies = [{"name": "ezproxy", "value": "x", "domain": ".libproxy.myuni.edu"}]
     assert config.detect_proxy_suffix(cookies, "") == "libproxy.myuni.edu"
